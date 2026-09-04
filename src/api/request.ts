@@ -58,18 +58,23 @@ client.interceptors.response.use(undefined, async (error: unknown) => {
     }
     normalized = new ApiError(
       body && typeof body === 'object' && 'info' in body ? String(body.info) : error.message,
-      error.response?.status,
+      body && typeof body === 'object' && 'code' in body
+        ? Number(body.code)
+        : error.response?.status,
     )
   }
   if (normalized.code === 401) {
     removeAccessToken()
+    window.dispatchEvent(new Event('harness:unauthorized'))
     if (router.currentRoute.value.name !== 'login') {
-      await router.replace({
+      void router.replace({
         name: 'login',
         query: { redirect: router.currentRoute.value.fullPath },
       })
     }
   }
+  if (normalized.code === 40301 && router.currentRoute.value.name !== 'password')
+    void router.replace({ name: 'password' })
   toast.error(normalized.message)
   return Promise.reject(normalized)
 })

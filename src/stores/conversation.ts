@@ -118,6 +118,17 @@ export const useConversationStore = defineStore('conversation', () => {
     realtimeStop = null
     clearCurrent()
   }
+  function reset() {
+    stopListening()
+    listRevision += 1
+    currentProjectId.value = null
+    conversations.value = []
+    listError.value = ''
+    listLoading.value = false
+    sending.value = false
+    interrupting.value = false
+    resolvingId.value = null
+  }
 
   const pendingApprovals = computed(() =>
     approvals.value.filter((item) => item.status === 'PENDING'),
@@ -426,6 +437,7 @@ export const useConversationStore = defineStore('conversation', () => {
   onScopeDispose(stopListening)
 
   return {
+    reset,
     startListening,
     stopListening,
     clearCurrent,

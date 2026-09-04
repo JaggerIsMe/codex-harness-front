@@ -44,13 +44,17 @@
               ><small>#{{ row.id }}</small></TableCell
             ><TableCell
               >{{ row.deviceName }}<small>{{ row.deviceCode }}</small></TableCell
-            ><TableCell>{{ row.rootPath }}</TableCell
+            ><TableCell
+              >{{ row.rootPath || '正在准备独占目录' }}
+              <p v-if="row.failureMessage" class="text-destructive">
+                {{ row.failureMessage }}
+              </p></TableCell
             ><TableCell
               ><AppBadge tone="success">{{ row.isolationMode }}</AppBadge></TableCell
             ><TableCell>{{ row.conversationCount }}</TableCell
             ><TableCell
-              ><AppBadge :tone="row.status === 'ACTIVE' ? 'success' : 'info'">{{
-                row.status
+              ><AppBadge :tone="row.provisioningStatus === 'READY' ? 'success' : 'info'">{{
+                { READY: '就绪', PREPARING: '准备中', FAILED: '准备失败' }[row.provisioningStatus]
               }}</AppBadge></TableCell
             ><TableCell
               ><AppButton link tone="primary" @click="open(row)">进入项目</AppButton></TableCell
@@ -80,7 +84,7 @@ import {
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { Plus } from 'lucide-vue-next'
@@ -110,7 +114,18 @@ function handleSearch() {
 function open(project: Project) {
   router.push({ name: 'project-detail', params: { projectId: project.id } })
 }
-onMounted(() => projectStore.loadProjects())
+let timer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  void projectStore.loadProjects()
+  timer = setInterval(() => {
+    if (
+      !loading.value &&
+      projects.value.some((project) => project.provisioningStatus === 'PREPARING')
+    )
+      void projectStore.loadProjects()
+  }, 3000)
+})
+onBeforeUnmount(() => clearInterval(timer))
 </script>
 
 <style src="../../assets/styles/project.scss"></style>

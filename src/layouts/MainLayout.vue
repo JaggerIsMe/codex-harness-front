@@ -26,7 +26,7 @@
       @keydown.esc="closeMobile"
     >
       <div class="sidebar-brand">
-        <RouterLink to="/" class="brand-link" aria-label="Harness 总览"
+        <RouterLink :to="authStore.home" class="brand-link" aria-label="Harness 首页"
           ><Command class="size-6 shrink-0" /><span v-if="!collapsed || mobileOpen"
             >Harness</span
           ></RouterLink
@@ -57,12 +57,12 @@
           >
         </nav>
         <WorkspaceNavigation
-          v-if="!collapsed || mobileOpen"
+          v-if="authStore.can('workspace:use') && (!collapsed || mobileOpen)"
           @create-project="projectVisible = true"
           @create-conversation="createConversation"
         />
         <button
-          v-else
+          v-else-if="authStore.can('workspace:use')"
           type="button"
           class="sidebar-link sidebar-workspace-toggle"
           aria-label="展开工作区"
@@ -80,7 +80,7 @@
         </div>
         <div class="sidebar-account">
           <span v-if="!collapsed || mobileOpen" class="truncate">{{
-            authStore.user?.displayName || authStore.user?.username || '管理员'
+            authStore.user?.displayName || authStore.user?.username || '用户'
           }}</span
           ><button
             type="button"
@@ -124,11 +124,14 @@ import {
   PanelLeft,
   PanelsTopLeft,
   LogOut,
+  Users,
+  KeyRound,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentStore } from '@/stores/agent'
 import { useProjectStore } from '@/stores/project'
 import { useNavigationStore } from '@/stores/navigation'
+import { useConversationStore } from '@/stores/conversation'
 import WorkspaceNavigation from '@/components/navigation/WorkspaceNavigation.vue'
 import CreateProjectDialog from '@/components/project/CreateProjectDialog.vue'
 import CreateConversationDialog from '@/components/conversation/CreateConversationDialog.vue'
@@ -139,6 +142,7 @@ const authStore = useAuthStore()
 const agentStore = useAgentStore()
 const projectStore = useProjectStore()
 const navigation = useNavigationStore()
+const conversations = useConversationStore()
 const collapsed = ref(false)
 const mobileOpen = ref(false)
 const mobileTrigger = ref<HTMLButtonElement | null>(null)
@@ -146,13 +150,17 @@ const isMobile = useMediaQuery('(max-width: 760px)')
 const projectVisible = ref(false)
 const conversationVisible = ref(false)
 const targetProjectId = ref<number | null>(null)
-const menuItems = [
-  { path: '/', label: '总览', icon: LayoutDashboard },
-  { path: '/devices', label: '设备管理', icon: Monitor },
-  { path: '/workspaces', label: '执行目录', icon: Files },
-  { path: '/skills', label: 'Skills', icon: Sparkles },
-  { path: '/projects', label: '项目', icon: Folder },
-]
+const menuItems = computed(() =>
+  [
+    { path: '/', label: '总览', icon: LayoutDashboard, permission: 'device:manage' },
+    { path: '/devices', label: '设备管理', icon: Monitor, permission: 'device:manage' },
+    { path: '/workspaces', label: '执行目录', icon: Files, permission: 'device:manage' },
+    { path: '/skills', label: 'Skills', icon: Sparkles, permission: 'skill:manage' },
+    { path: '/users', label: '用户管理', icon: Users, permission: 'system:user:manage' },
+    { path: '/projects', label: '我的项目', icon: Folder, permission: 'workspace:use' },
+    { path: '/account/password', label: '修改密码', icon: KeyRound, permission: '' },
+  ].filter((item) => !item.permission || authStore.can(item.permission)),
+)
 const connectionLabel = computed(
   () =>
     ({ CONNECTED: '已连接', CONNECTING: '正在连接…', DISCONNECTED: '连接已断开' })[
@@ -183,9 +191,12 @@ async function conversationCreated(value: Conversation) {
     query: { id: value.id },
   })
 }
-function signOut() {
-  authStore.signOut()
-  void router.replace({ name: 'login' })
+async function signOut() {
+  try {
+    await authStore.signOut()
+  } finally {
+    await router.replace({ name: 'login' })
+  }
 }
 watch(
   () => route.fullPath,
@@ -200,15 +211,17 @@ watch(mobileOpen, async (open) => {
   }
 })
 onMounted(async () => {
-  agentStore.connect()
-  await Promise.all([
-    projectStore.loadProjects(),
-    authStore.user ? Promise.resolve() : authStore.loadProfile().catch(() => {}),
-  ])
+  if (authStore.can('workspace:use')) {
+    void agentStore.connect()
+    await projectStore.loadProjects()
+  }
 })
 onBeforeUnmount(() => {
   agentStore.disconnect()
   navigation.reset()
+  projectStore.reset()
+  agentStore.reset()
+  conversations.reset()
 })
 </script>
 <style scoped src="../assets/styles/main.layout.scss"></style>

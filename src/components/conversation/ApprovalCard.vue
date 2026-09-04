@@ -18,6 +18,7 @@
         plain
         :loading="loading"
         @click="emit('decision', 'ACCEPT_FOR_SESSION')"
+        v-if="auth.can('device:manage')"
         >本会话批准</AppButton
       >
       <AppButton
@@ -44,6 +45,8 @@
 import type { Approval, Decision } from '@/types/domain'
 import AppButton from '@/components/common/AppButton.vue'
 import { TriangleAlert as Warning } from 'lucide-vue-next'
+import { useAuthStore } from '@/stores/auth'
+const auth = useAuthStore()
 defineProps<{ approval: Approval; loading?: boolean }>()
 const emit = defineEmits<{ decision: [value: Decision] }>()
 

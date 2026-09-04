@@ -56,12 +56,18 @@
             class="sidebar-icon"
             :aria-label="`在 ${project.projectName} 新建会话`"
             title="新建会话"
+            :disabled="project.provisioningStatus !== 'READY'"
             @click="emit('createConversation', project.id)"
           >
             <SquarePen class="size-3.5" />
           </button>
         </div>
-        <div v-if="isExpanded(project.id) || keyword" class="workspace-conversations">
+        <p v-if="project.provisioningStatus !== 'READY'" class="sidebar-hint">
+          {{
+            project.provisioningStatus === 'PREPARING' ? '目录准备中…' : '目录未就绪，进入项目处理'
+          }}
+        </p>
+        <div v-else-if="isExpanded(project.id) || keyword" class="workspace-conversations">
           <p v-if="navigation.loading[project.id]" class="sidebar-hint" role="status">
             加载会话中…
           </p>
@@ -160,7 +166,8 @@ function toggle(id: Id) {
   navigation.expanded[id] = !isExpanded(id)
 }
 watch(
-  () => projects.projects.map((item) => item.id),
+  () =>
+    projects.projects.filter((item) => item.provisioningStatus === 'READY').map((item) => item.id),
   (ids) => {
     ids.forEach((id) => void navigation.load(id))
   },

@@ -1,164 +1,123 @@
 <template>
-  <AppDialog :model-value="modelValue" title="创建隔离项目" width="560px" @close="close">
-    <AppAlert class="isolation-alert" type="info" :closable="false" show-icon>
-      <template #title>项目将独占一个执行目录，并强制使用 Windows elevated 沙箱</template>
-    </AppAlert>
-    <AppForm ref="formRef" :model="form" :rules="rules">
-      <FormField label="项目名称" prop="projectName">
+  <AppDialog :model-value="modelValue" title="创建项目" @update:model-value="close">
+    <form id="create-project-form" class="grid gap-4" @submit.prevent="submit">
+      <label class="grid gap-2"
+        >项目名称
         <AppInput
-          v-model="form.projectName"
+          v-model="projectName"
+          label="项目名称"
+          required
           maxlength="128"
           placeholder="例如：订单服务"
-          @keyup.enter="submit"
         />
-      </FormField>
-      <FormField label="强隔离设备" prop="deviceId">
-        <AppSelect
-          v-model="form.deviceId"
-          placeholder="选择已启用 Windows elevated 的在线机器"
-          :loading="loadingDevices"
-          @change="loadWorkspaces"
-        >
-          <option v-for="device in isolatedDevices" :key="device.id" :value="device.id">
-            {{ `${device.deviceName} · ${device.deviceCode}` }}
-          </option>
-        </AppSelect>
-      </FormField>
-      <FormField label="独占执行目录" prop="workspaceId">
-        <AppSelect
-          v-model="form.workspaceId"
-          placeholder="选择尚未绑定项目的目录"
-          :loading="loadingWorkspaces"
-          :disabled="!form.deviceId"
-        >
+      </label>
+      <label class="grid gap-2"
+        >可执行机器
+        <AppSelect v-model="deviceId" :disabled="loading || submitting" required>
+          <option value="">请选择机器</option>
           <option
-            v-for="workspace in availableWorkspaces"
-            :key="workspace.id"
-            :value="workspace.id"
+            v-for="device in devices"
+            :key="device.id"
+            :value="String(device.id)"
+            :disabled="!ready(device)"
           >
-            {{ workspace.workspaceName }}
+            {{ device.deviceName }} · {{ ready(device) ? '可用' : '离线或尚未配置执行环境' }}
           </option>
         </AppSelect>
-        <button
-          v-if="form.deviceId"
-          type="button"
-          class="mt-2 text-xs text-muted-foreground underline underline-offset-4"
-          @click="workspaceVisible = true"
-        >
-          没有可用目录？新建执行目录
-        </button>
-      </FormField>
-    </AppForm>
+      </label>
+      <p v-if="loading" role="status">正在加载已分配机器…</p>
+      <p v-else-if="!devices.length" class="text-sm text-muted-foreground">
+        暂无已分配机器，请联系管理员分配。
+      </p>
+      <p class="text-sm text-muted-foreground">
+        平台会自动准备项目独占目录，目录就绪后即可开始会话。
+      </p>
+      <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
+    </form>
     <template #footer>
-      <AppButton @click="close">取消</AppButton>
-      <AppButton tone="primary" :loading="submitting" @click="submit">创建项目</AppButton>
+      <AppButton :disabled="submitting" @click="close(false)">取消</AppButton>
+      <AppButton
+        tone="primary"
+        :loading="submitting"
+        :disabled="loading || !deviceId"
+        @click="submit"
+        >创建项目</AppButton
+      >
     </template>
   </AppDialog>
-  <CreateWorkspaceDialog
-    v-model="workspaceVisible"
-    :initial-device-id="form.deviceId || ''"
-    @created="workspaceCreated"
-  />
 </template>
-
 <script setup lang="ts">
-import type { Project, Workspace } from '@/types/domain'
-import CreateWorkspaceDialog from '@/components/workspace/CreateWorkspaceDialog.vue'
-import AppAlert from '@/components/common/AppAlert.vue'
-import FormField from '@/components/common/FormField.vue'
-import AppForm from '@/components/common/AppForm.vue'
+import { ref, watch } from 'vue'
+import type { Project, ExecutableDevice } from '@/types/domain'
 import AppDialog from '@/components/common/AppDialog.vue'
-import AppSelect from '@/components/common/AppSelect.vue'
 import AppInput from '@/components/common/AppInput.vue'
+import AppSelect from '@/components/common/AppSelect.vue'
 import AppButton from '@/components/common/AppButton.vue'
-import type { FormRules, FormHandle } from '@/components/common/form'
-import { computed, reactive, ref, watch } from 'vue'
-import { createProject } from '../../api/project'
-import { useAgentStore } from '../../stores/agent'
-import { useProjectStore } from '../../stores/project'
+import { getExecutableDevices, createProject } from '@/api/project'
+import { useProjectStore } from '@/stores/project'
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; created: [value: Project] }>()
-const agentStore = useAgentStore()
-const projectStore = useProjectStore()
-const formRef = ref<FormHandle | null>(null)
-const loadingDevices = ref(false)
-const loadingWorkspaces = ref(false)
+const store = useProjectStore()
+const devices = ref<ExecutableDevice[]>([])
+const projectName = ref('')
+const deviceId = ref('')
+const requestKey = ref('')
+const loading = ref(false)
 const submitting = ref(false)
-const workspaceVisible = ref(false)
-const form = reactive<{ projectName: string; deviceId: number | null; workspaceId: number | null }>(
-  { projectName: '', deviceId: null, workspaceId: null },
-)
-const rules: FormRules = {
-  projectName: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
-  deviceId: [{ required: true, message: '请选择强隔离在线设备', trigger: 'change' }],
-  workspaceId: [{ required: true, message: '请选择独占执行目录', trigger: 'change' }],
-}
-const isolatedDevices = computed(() =>
-  agentStore.devices.filter(
-    (item) => item.status === 'ONLINE' && item.isolationMode === 'WINDOWS_ELEVATED',
-  ),
-)
-const occupiedWorkspaceIds = computed(
-  () => new Set(projectStore.projects.map((item) => String(item.workspaceId))),
-)
-const availableWorkspaces = computed(() =>
-  (agentStore.workspacesByDevice[form.deviceId || ''] || []).filter(
-    (item) => item.status === 'ENABLED' && !occupiedWorkspaceIds.value.has(String(item.id)),
-  ),
-)
-
+const error = ref('')
+const ready = (d: ExecutableDevice) =>
+  d.status === 'ONLINE' && d.isolationMode === 'WINDOWS_PROJECT_PROFILE' && d.provisioningAvailable
 watch(
   () => props.modelValue,
-  async (visible) => {
-    if (!visible) return
-    Object.assign(form, { projectName: '', deviceId: null, workspaceId: null })
-    loadingDevices.value = true
+  async (open, _, onCleanup) => {
+    if (!open) return
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    projectName.value = ''
+    deviceId.value = ''
+    error.value = ''
+    devices.value = []
+    requestKey.value = crypto.randomUUID()
+    loading.value = true
     try {
-      await Promise.all([agentStore.loadDevices(), projectStore.loadProjects()])
+      const result = await getExecutableDevices(controller.signal)
+      if (!controller.signal.aborted) devices.value = result.data
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        error.value = cause instanceof Error ? cause.message : '机器加载失败'
     } finally {
-      loadingDevices.value = false
+      if (!controller.signal.aborted) loading.value = false
     }
   },
 )
-
-async function loadWorkspaces(deviceId: number | null) {
-  form.workspaceId = null
-  if (!deviceId) return
-  loadingWorkspaces.value = true
-  try {
-    await agentStore.loadWorkspaces(deviceId)
-  } finally {
-    loadingWorkspaces.value = false
-  }
+// Changing the intended project starts a new idempotent request; network retries keep the same key.
+watch([projectName, deviceId], () => {
+  requestKey.value = crypto.randomUUID()
+})
+function close(open: boolean) {
+  if (!submitting.value) emit('update:modelValue', open)
 }
-
 async function submit() {
   if (submitting.value) return
-  if (!(await formRef.value?.validate()) || submitting.value) return
+  if (!projectName.value.trim() || !deviceId.value) {
+    error.value = '请填写项目名称并选择机器'
+    return
+  }
   submitting.value = true
+  error.value = ''
   try {
-    const response = await createProject({
-      deviceId: form.deviceId!,
-      workspaceId: form.workspaceId!,
-      projectName: form.projectName.trim(),
+    const result = await createProject({
+      projectName: projectName.value.trim(),
+      deviceId: Number(deviceId.value),
+      requestKey: requestKey.value,
     })
-    projectStore.upsertProject(response.data)
-    emit('created', response.data)
-    close()
+    store.upsertProject(result.data)
+    emit('created', result.data)
+    emit('update:modelValue', false)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '创建失败'
   } finally {
     submitting.value = false
   }
-}
-
-function close() {
-  workspaceVisible.value = false
-  emit('update:modelValue', false)
-}
-
-async function workspaceCreated(workspace: Workspace) {
-  if (workspace.deviceId !== form.deviceId) return
-  await agentStore.loadWorkspaces(workspace.deviceId)
-  if (availableWorkspaces.value.some((item) => item.id === workspace.id))
-    form.workspaceId = workspace.id
 }
 </script>

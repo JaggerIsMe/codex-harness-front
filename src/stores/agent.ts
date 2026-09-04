@@ -16,16 +16,18 @@ import {
   getDeviceWorkspaces,
 } from '../api/agent.ts'
 import { getAccessToken } from '../utils/auth.ts'
+import { getSocketTicket } from '@/api/auth'
+import { useAuthStore } from '@/stores/auth'
 const RECONNECT_DELAY = 3000
 
 function getClientSocketUrl(token: string) {
   const configured = import.meta.env.VITE_WS_BASE_URL
   if (configured) {
     const base = configured.replace(/\/$/, '')
-    return `${base}/ws/client?access_token=${encodeURIComponent(token)}`
+    return `${base}/ws/client?ticket=${encodeURIComponent(token)}`
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws/client?access_token=${encodeURIComponent(token)}`
+  return `${protocol}//${window.location.host}/ws/client?ticket=${encodeURIComponent(token)}`
 }
 
 export const useAgentStore = defineStore('agent', () => {
@@ -39,6 +41,17 @@ export const useAgentStore = defineStore('agent', () => {
   let reconnectTimer: number | null = null
   let intentionallyClosed = false
   let removeListeners: (() => void) | null = null
+  let ticketController: AbortController | null = null
+  let revision = 0
+  function reset() {
+    disconnect()
+    revision += 1
+    devices.value = []
+    workspacesByDevice.value = {}
+    workspaceRootsByDevice.value = {}
+    lastEvent.value = null
+    eventRevision.value = 0
+  }
 
   const onlineDeviceCount = computed(
     () => devices.value.filter((item) => item.status === 'ONLINE').length,
@@ -48,13 +61,17 @@ export const useAgentStore = defineStore('agent', () => {
   )
 
   async function loadDevices() {
+    const version = revision
     const result = await getDevices()
+    if (version !== revision) return []
     devices.value = result?.data || []
     return devices.value
   }
 
   async function loadWorkspaces(deviceId: Id) {
+    const version = revision
     const result = await getDeviceWorkspaces(deviceId)
+    if (version !== revision) return []
     workspacesByDevice.value = {
       ...workspacesByDevice.value,
       [deviceId]: result?.data || [],
@@ -69,7 +86,9 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   async function loadWorkspaceRoots(deviceId: Id) {
+    const version = revision
     const result = await getDeviceWorkspaceRoots(deviceId)
+    if (version !== revision) return []
     workspaceRootsByDevice.value = {
       ...workspaceRootsByDevice.value,
       [deviceId]: result?.data || [],
@@ -91,17 +110,35 @@ export const useAgentStore = defineStore('agent', () => {
     }, RECONNECT_DELAY)
   }
 
-  function connect() {
+  async function connect() {
     const token = getAccessToken()
     if (
       !token ||
+      ticketController ||
+      !useAuthStore().can('workspace:use') ||
       socket?.readyState === WebSocket.OPEN ||
       socket?.readyState === WebSocket.CONNECTING
     )
       return
     intentionallyClosed = false
     connectionState.value = 'CONNECTING'
-    const connection = new WebSocket(getClientSocketUrl(token))
+    const controller = new AbortController()
+    ticketController = controller
+    let ticket: string
+    try {
+      const result = await getSocketTicket(controller.signal)
+      ticket = result.data.ticket
+    } catch {
+      if (!controller.signal.aborted) {
+        connectionState.value = 'DISCONNECTED'
+        scheduleReconnect()
+      }
+      return
+    } finally {
+      if (ticketController === controller) ticketController = null
+    }
+    if (controller.signal.aborted || intentionallyClosed || getAccessToken() !== token) return
+    const connection = new WebSocket(getClientSocketUrl(ticket))
     socket = connection
     const onOpen = () => {
       if (socket === connection) connectionState.value = 'CONNECTED'
@@ -112,6 +149,7 @@ export const useAgentStore = defineStore('agent', () => {
       if (!parsed) return
       lastEvent.value = parsed
       eventRevision.value += 1
+      if (!useAuthStore().can('device:manage')) return
       if (['REGISTER', 'HEARTBEAT', 'DEVICE_OFFLINE'].includes(parsed.type))
         void loadDevices().catch(() => {})
       if (
@@ -122,12 +160,17 @@ export const useAgentStore = defineStore('agent', () => {
       if (parsed.deviceId && parsed.type === 'REGISTER')
         void loadWorkspaceRoots(parsed.deviceId).catch(() => {})
     }
-    const onClose = () => {
+    const onClose = (event: CloseEvent) => {
       if (socket !== connection) return
       removeListeners?.()
       socket = null
       connectionState.value = 'DISCONNECTED'
-      scheduleReconnect()
+      if (event.code === 1008)
+        void useAuthStore()
+          .loadProfile()
+          .then(() => connect())
+          .catch(() => {})
+      else scheduleReconnect()
     }
     const onError = () => {
       if (socket === connection) connection.close()
@@ -147,6 +190,8 @@ export const useAgentStore = defineStore('agent', () => {
 
   function disconnect() {
     intentionallyClosed = true
+    ticketController?.abort()
+    ticketController = null
     if (reconnectTimer) window.clearTimeout(reconnectTimer)
     reconnectTimer = null
     removeListeners?.()
@@ -173,5 +218,6 @@ export const useAgentStore = defineStore('agent', () => {
     createWorkspace,
     connect,
     disconnect,
+    reset,
   }
 })

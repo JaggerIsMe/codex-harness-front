@@ -10,7 +10,7 @@ const device = {
   deviceName: '测试设备',
   deviceCode: 'DEV-1',
   status: 'ONLINE',
-  isolationMode: 'WINDOWS_ELEVATED',
+  isolationMode: 'WINDOWS_PROJECT_PROFILE',
   osName: 'Windows',
   agentVersion: '1.0',
 }
@@ -22,6 +22,7 @@ const workspace = {
   status: 'ENABLED',
 }
 const project = {
+  provisioningStatus: 'READY',
   id: 3,
   projectName: '示例项目',
   deviceId: 1,
@@ -33,7 +34,7 @@ const project = {
   deviceStatus: 'ONLINE',
   workspaceStatus: 'ENABLED',
   conversationCount: 1,
-  isolationMode: 'WINDOWS_ELEVATED',
+  isolationMode: 'WINDOWS_PROJECT_PROFILE',
 }
 const conversation = {
   id: 4,
@@ -123,6 +124,14 @@ test('logical Message streaming deduplicates updates and survives page reload', 
 })
 
 async function fixtures(page: Page, authenticated = true) {
+  const profile = {
+    id: 1,
+    username: '测试管理员',
+    displayName: '测试管理员',
+    roles: ['SYS_ADMIN'],
+    permissions: ['system:user:manage', 'device:manage', 'skill:manage', 'workspace:use'],
+    mustChangePassword: false,
+  }
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   if (authenticated)
@@ -130,9 +139,11 @@ async function fixtures(page: Page, authenticated = true) {
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1', '')
     let data: unknown = []
-    if (path === '/auth/profile') data = { username: '测试管理员' }
-    else if (path === '/auth/login')
-      data = { accessToken: 'test-token', user: { username: '测试管理员' } }
+    if (path === '/auth/profile') data = profile
+    else if (path === '/auth/socket-ticket')
+      data = { ticket: 'one-time-test-ticket', expiresInSeconds: 30 }
+    else if (path === '/auth/login') data = { accessToken: 'test-token', user: profile }
+    else if (path === '/devices/available') data = [{ ...device, provisioningAvailable: true }]
     else if (path === '/devices') data = [device]
     else if (path === '/devices/1/workspaces')
       data = [workspace, { ...workspace, id: 22, workspaceName: '空闲目录' }]
@@ -295,11 +306,10 @@ test('sidebar creates a project and a conversation without leaving the workspace
   await page.getByRole('button', { name: '新建项目', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByPlaceholder('例如：订单服务').fill('侧栏新项目')
-  await dialog
-    .getByRole('combobox', { name: '选择已启用 Windows elevated 的在线机器' })
-    .selectOption('1')
-  await expect(dialog.getByRole('button', { name: '没有可用目录？新建执行目录' })).toBeVisible()
-  await dialog.getByRole('combobox', { name: '选择尚未绑定项目的目录' }).selectOption('22')
+  await dialog.getByRole('combobox', { name: '可执行机器' }).selectOption('1')
+  await expect(
+    dialog.getByText('平台会自动准备项目独占目录，目录就绪后即可开始会话。'),
+  ).toBeVisible()
   await dialog.getByRole('button', { name: '创建项目', exact: true }).click()
   await expect(page.getByRole('link', { name: '侧栏新项目', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '在 侧栏新项目 新建会话', exact: true }).click()

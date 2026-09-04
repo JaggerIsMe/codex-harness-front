@@ -89,7 +89,12 @@ async function submitLogin() {
   try {
     await authStore.signIn(form)
     toast.success('登录成功')
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+    const redirect =
+      typeof route.query.redirect === 'string' &&
+      route.query.redirect.startsWith('/') &&
+      !route.query.redirect.startsWith('//')
+        ? route.query.redirect
+        : authStore.home
     await router.replace(redirect)
   } catch {
     // 错误提示由请求层统一展示。

@@ -34,6 +34,39 @@ export interface User {
   id: number
   username: string
   displayName: string
+  roles: string[]
+  permissions: string[]
+  mustChangePassword: boolean
+}
+export interface ManagedUser extends Omit<User, 'permissions'> {
+  status: 'ENABLED' | 'DISABLED'
+  deviceIds: number[]
+  lastLoginAt?: string
+  createdAt?: string
+}
+export interface UserInput {
+  username: string
+  displayName: string
+  password: string
+  role: string
+  deviceIds: number[]
+}
+export interface PageResult<T> {
+  items: T[]
+  total: number
+  page: number
+  size: number
+}
+export interface RoleOption {
+  code: string
+  name: string
+}
+export interface ExecutableDevice {
+  id: number
+  deviceName: string
+  status: string
+  isolationMode: string
+  provisioningAvailable: boolean
 }
 export interface LoginResult {
   accessToken: string
@@ -46,6 +79,9 @@ export interface Enrollment {
   expiresAt: string
 }
 export interface Project {
+  provisioningStatus: 'PREPARING' | 'READY' | 'FAILED'
+  failureCode?: string
+  failureMessage?: string
   id: number
   projectName: string
   status: string
@@ -140,7 +176,7 @@ export interface WorkspaceInput {
 export interface ProjectInput {
   projectName: string
   deviceId: Id
-  workspaceId: Id
+  requestKey: string
 }
 export interface ConversationInput {
   title?: string

@@ -9,9 +9,11 @@ export default defineConfig({
     viewport: { width: 1440, height: 1000 },
     trace: 'retain-on-failure',
   },
-  webServer: {
-    command: 'node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 18011 --strictPort',
-    url: 'http://127.0.0.1:18011',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: process.env.HARNESS_E2E_EXTERNAL_SERVER
+    ? undefined
+    : {
+        command: 'node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 18011 --strictPort',
+        url: 'http://127.0.0.1:18011',
+        reuseExistingServer: !process.env.CI,
+      },
 })
