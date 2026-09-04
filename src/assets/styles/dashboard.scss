@@ -1,0 +1,158 @@
+@use './variables.scss' as *;
+
+.dashboard-page {
+  max-width: 1480px;
+  margin: 0 auto;
+}
+.welcome-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 194px;
+  padding: 36px 42px;
+  overflow: hidden;
+  border-radius: 18px;
+  color: #262626;
+  background: #fafafa;
+  border: 1px solid #ededed;
+}
+.welcome-card h2 {
+  margin: 10px 0 10px;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+.welcome-card p {
+  max-width: 640px;
+  margin: 0;
+  color: #777777;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.metric-grid {
+  margin-top: 20px;
+}
+.metric-grid > div {
+  margin-bottom: 20px;
+}
+.metric-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 124px;
+  padding: 24px;
+  border: 1px solid $border-color;
+  border-radius: 14px;
+  background: #fff;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(25, 36, 68, 0.08);
+}
+.metric-card__icon {
+  display: grid;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 13px;
+  font-size: 21px;
+}
+.metric-card__icon--green {
+  color: #555555;
+  background: #f5f5f5;
+}
+.metric-card__icon--blue {
+  color: #555555;
+  background: #f5f5f5;
+}
+.metric-card__icon--purple {
+  color: #555555;
+  background: #f5f5f5;
+}
+.metric-card__icon--orange {
+  color: #555555;
+  background: #f5f5f5;
+}
+.metric-card div:last-child {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  column-gap: 10px;
+}
+.metric-card span {
+  grid-column: 1;
+  color: $text-secondary;
+  font-size: 12px;
+}
+.metric-card strong {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: $text-primary;
+  font-size: 30px;
+}
+.metric-card small {
+  grid-column: 1;
+  margin-top: 7px;
+  color: #a2a9b8;
+  font-size: 10px;
+}
+.setup-card {
+  padding: 30px 32px;
+  border: 1px solid $border-color;
+  border-radius: 16px;
+  background: #fff;
+}
+.setup-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.setup-card__header h3 {
+  margin: 7px 0 0;
+  font-size: 19px;
+}
+.setup-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+  margin-top: 30px;
+}
+.setup-step {
+  display: flex;
+  gap: 15px;
+  padding: 20px;
+  border-radius: 12px;
+  background: #fafafa;
+}
+.setup-step__index {
+  color: $brand-primary;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.setup-step strong {
+  font-size: 13px;
+}
+.setup-step p {
+  margin: 8px 0 0;
+  color: $text-secondary;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+@media (max-width: 1024px) {
+  .setup-steps {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+@media (max-width: 760px) {
+  .welcome-card {
+    padding: 30px 26px;
+  }
+}

@@ -1,0 +1,115 @@
+@use './variables.scss' as *;
+.login-page {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100%;
+  overflow: auto;
+  background: #fff;
+}
+.login-intro {
+  display: flex;
+  align-items: center;
+  padding: 64px clamp(32px, 6vw, 100px);
+  color: #262626;
+  background: #fafafa;
+  border-right: 1px solid #ededed;
+}
+.login-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 90px;
+  font-weight: 600;
+}
+.login-logo span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: #262626;
+  color: #fff;
+}
+.login-intro__eyebrow,
+.login-card__eyebrow {
+  color: #888;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  margin-bottom: 18px;
+}
+.login-intro h1 {
+  font-size: clamp(28px, 3vw, 48px);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -1px;
+}
+.login-intro__description {
+  margin-top: 24px;
+  color: #777;
+  font-size: 14px;
+  line-height: 1.9;
+}
+.login-features {
+  display: flex;
+  gap: 32px;
+  margin-top: 48px;
+}
+.login-features div {
+  display: grid;
+  gap: 8px;
+}
+.login-features strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.login-features span {
+  font-size: 11px;
+  color: #888;
+}
+.login-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 32px 24px;
+  min-height: 100dvh;
+}
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  margin: auto 0;
+}
+.login-card h2 {
+  font-size: 28px;
+  font-weight: 500;
+}
+.login-card__hint {
+  color: #888;
+  font-size: 13px;
+  margin: 12px 0 32px;
+}
+.login-submit {
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 10px;
+}
+.login-card__security {
+  margin-top: 28px;
+  color: #999;
+  font-size: 11px;
+  line-height: 1.8;
+  text-align: center;
+}
+.login-panel__footer {
+  margin-top: 30px;
+  color: #aaa;
+  font-size: 11px;
+}
+@media (max-width: 980px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+  .login-intro {
+    display: none;
+  }
+}

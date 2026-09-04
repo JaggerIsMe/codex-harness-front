@@ -1,0 +1,53 @@
+.skill-page {
+  .toolbar-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .skill-tabs {
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .skill-tabs :deep([data-slot='tabs-content']),
+  .skill-tabs :deep([data-slot='tabs-content']) {
+    min-height: 0;
+    flex: 1;
+  }
+  .skill-tabs :deep([data-slot='tabs-content']) {
+    height: 100%;
+  }
+  .skill-tabs .data-card {
+    height: 100%;
+  }
+  .version-panel {
+    padding: 14px 22px 20px 66px;
+    background: #f8fafc;
+  }
+  .version-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  code {
+    color: #334155;
+    font-size: 12px;
+  }
+}
+
+.skill-upload {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .skill-page .toolbar-actions {
+    width: 100%;
+  }
+  .skill-page .toolbar-actions button {
+    flex: 1;
+  }
+  .skill-page .version-panel {
+    padding-left: 14px;
+  }
+}
