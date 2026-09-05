@@ -46,7 +46,7 @@ import AppDialog from '@/components/common/AppDialog.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import type { FormRules, FormHandle } from '@/components/common/form'
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { createSkill, uploadSkillVersion } from '../../api/skill'
 const props = defineProps<{ modelValue: boolean; skill: Skill | null }>()
 const emit = defineEmits<{
@@ -62,11 +62,17 @@ const form = reactive<{
   file: File | null
 }>({ skillName: '', description: '', version: '', file: null })
 const segmentPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-const rules: FormRules = {
-  skillName: [
-    { required: true, message: '请输入 Skill 名称', trigger: 'blur' },
-    { pattern: segmentPattern, message: '只能包含字母、数字、点、下划线和连字符', trigger: 'blur' },
-  ],
+const rules = computed<FormRules>(() => ({
+  skillName: props.skill
+    ? []
+    : [
+        { required: true, message: '请输入 Skill 名称', trigger: 'blur' },
+        {
+          pattern: segmentPattern,
+          message: '只能包含字母、数字、点、下划线和连字符',
+          trigger: 'blur',
+        },
+      ],
   version: [
     { required: true, message: '请输入版本号', trigger: 'blur' },
     { pattern: segmentPattern, message: '版本号格式不正确', trigger: 'blur' },
@@ -78,7 +84,7 @@ const rules: FormRules = {
       trigger: 'change',
     },
   ],
-}
+}))
 
 watch(
   () => props.modelValue,

@@ -23,6 +23,16 @@
           </p>
         </div>
         <div class="conversation-header__actions">
+          <RouterLink
+            :to="`/projects/${currentConversation.projectId}/experts`"
+            class="relative inline-flex"
+            ><AppButton>项目专家</AppButton
+            ><span
+              v-if="expertUpgradeAvailable"
+              aria-label="项目专家有新版本"
+              class="absolute -right-1 -top-1 size-2.5 rounded-full bg-red-500 ring-2 ring-background"
+            ></span
+          ></RouterLink>
           <AppBadge
             v-if="!currentConversation.codexThreadId && currentConversation.status === 'ACTIVE'"
             tone="warning"
@@ -69,7 +79,7 @@
 
           <article v-else class="agent-message">
             <header class="agent-message__header">
-              <strong>Codex</strong
+              <strong>{{ expertName(message.turnId) }}</strong
               ><span v-if="isStreaming(message)" class="streaming-state"><i></i>正在回答</span>
             </header>
             <p v-if="message.incomplete" class="text-sm text-amber-700">
@@ -111,6 +121,9 @@
         </div>
         <p v-if="artifactLoading" role="status" class="p-3 text-sm text-muted-foreground">
           加载交付文件中…
+        </p>
+        <p v-if="expertIdentityError" role="alert" class="p-3 text-sm text-destructive">
+          {{ expertIdentityError }}
         </p>
         <p v-if="artifactError" role="alert" class="p-3 text-sm text-destructive">
           {{ artifactError }}
@@ -155,6 +168,12 @@
         <h2>今天想做些什么？</h2>
         <p>新建一个会话，开始与 Codex 一起工作。</p>
         <AppButton :icon="Plus" tone="primary" @click="emit('create')">新建会话</AppButton>
+        <RouterLink
+          v-if="conversationStore.currentProjectId"
+          :to="`/projects/${conversationStore.currentProjectId}/experts`"
+          class="mt-3 block text-sm text-primary underline"
+          >管理项目专家</RouterLink
+        >
       </div>
     </div>
   </section>
@@ -178,6 +197,8 @@ import ConversationComposer from './ConversationComposer.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import MessageArtifacts from './MessageArtifacts.vue'
 import { useConversationArtifacts } from '@/composables/useConversationArtifacts'
+import { useTurnExperts } from '@/composables/useTurnExperts'
+import { useProjectExpertUpgradeNotice } from '@/composables/useProjectExpertUpgradeNotice'
 
 defineProps<{ projectName?: string }>()
 const emit = defineEmits<{ create: [] }>()
@@ -193,8 +214,19 @@ const {
 } = storeToRefs(conversationStore)
 const messagePanel = ref<HTMLElement | null>(null)
 const shouldStickToBottom = ref(true)
+const expertUpgradeAvailable = useProjectExpertUpgradeNotice(
+  computed(() => currentConversation.value?.projectId),
+)
 
 const displayMessages = computed(() => buildConversationDisplayMessages(messages.value))
+const { rows: turnExperts, error: expertIdentityError } = useTurnExperts(
+  () => currentConversation.value,
+  () => currentTurn.value,
+)
+const expertName = (id: number) => {
+  const value = turnExperts.value.find((row) => String(row.turnId) === String(id))
+  return value ? value.expertName || 'Codex' : '助手'
+}
 const {
   rows: artifacts,
   loading: artifactLoading,
@@ -236,7 +268,12 @@ function turnStatusLabel(status: string) {
   return (
     (
       {
-        CREATED: currentTurn.value?.preparationPhase ? '正在准备附件' : '任务正在下发',
+        CREATED:
+          currentTurn.value?.preparationPhase === 'EXPERT_SKILLS'
+            ? '正在准备专家 Skills'
+            : currentTurn.value?.preparationPhase
+              ? '正在准备附件'
+              : '任务正在下发',
         RUNNING: 'Codex 正在执行',
         WAITING_APPROVAL: '等待审批',
       } as Record<string, string>

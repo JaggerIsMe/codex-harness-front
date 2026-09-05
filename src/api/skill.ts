@@ -7,8 +7,8 @@ import type {
   SearchParams,
   SkillInput,
 } from '@/types/domain'
-export function getSkills(params: SearchParams) {
-  return request<Skill[]>('get', `/skills`, undefined, { params })
+export function getSkills(params: SearchParams, signal?: AbortSignal) {
+  return request<Skill[]>('get', `/skills`, undefined, { params, signal })
 }
 export function getSkillDeployments(params: SearchParams) {
   return request<SkillDeployment[]>('get', `/skill-deployments`, undefined, { params })

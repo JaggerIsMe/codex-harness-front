@@ -68,10 +68,30 @@ test('temporary password must be changed before workspace is loaded', async ({ p
   expect(requests).not.toContain('/auth/socket-ticket')
 })
 
-test('admin creates a member and grants multiple shared machines', async ({ page }) => {
+test('admin creates a member and grants machines and experts', async ({ page }) => {
   await setup(page, admin)
   let users: Record<string, unknown>[] = []
   let assigned: number[] = []
+  let assignedExperts: number[] = []
+  await page.route('**/api/v1/admin/experts**', (route) =>
+    route.fulfill({
+      json: {
+        status: 'success',
+        code: 200,
+        info: '成功',
+        data: [
+          {
+            id: 10,
+            name: 'Java 专家',
+            description: 'Java 开发',
+            status: 'PUBLISHED',
+            publishedVersionId: 100,
+            revision: 1,
+          },
+        ],
+      },
+    }),
+  )
   await page.route('**/api/v1/users**', async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
@@ -86,6 +106,7 @@ test('admin creates a member and grants multiple shared machines', async ({ page
           displayName: body.displayName,
           roles: ['USER'],
           deviceIds: [],
+          expertIds: [],
           status: 'ENABLED',
           mustChangePassword: true,
         },
@@ -94,6 +115,10 @@ test('admin creates a member and grants multiple shared machines', async ({ page
     } else if (path.endsWith('/devices')) {
       assigned = request.postDataJSON().deviceIds
       users[0]!.deviceIds = assigned
+      data = users[0]
+    } else if (path.endsWith('/experts')) {
+      assignedExperts = request.postDataJSON().expertIds
+      users[0]!.expertIds = assignedExperts
       data = users[0]
     } else data = { items: users, total: users.length, page: 1, size: 20 }
     await route.fulfill({ json: { status: 'success', code: 200, info: '成功', data } })
@@ -114,6 +139,13 @@ test('admin creates a member and grants multiple shared machines', async ({ page
   await expect(devices).toHaveCount(0)
   expect(assigned).toEqual([1, 2])
   await expect(page.getByRole('cell', { name: '2 台' })).toBeVisible()
+  await page.getByRole('button', { name: '分配专家' }).click()
+  const experts = page.getByRole('dialog')
+  await experts.getByRole('checkbox', { name: /Java 专家/ }).check()
+  await experts.getByRole('button', { name: '保存分配' }).click()
+  await expect(experts).toHaveCount(0)
+  expect(assignedExperts).toEqual([10])
+  await expect(page.getByRole('cell', { name: '1 个' })).toBeVisible()
   await page.screenshot({ path: 'test-results/user-management.png', fullPage: true })
 })
 

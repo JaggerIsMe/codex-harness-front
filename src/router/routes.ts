@@ -14,6 +14,24 @@ const routes = [
     meta: { requiresAuth: true },
     children: [
       {
+        path: 'expert-market',
+        name: 'expert-market',
+        component: () => import('../views/expert/ExpertMarket.vue'),
+        meta: { title: '专家市场', permission: 'expert:read' },
+      },
+      {
+        path: 'experts',
+        name: 'expert-management',
+        component: () => import('../views/expert/ExpertManagement.vue'),
+        meta: { title: '专家管理', permission: 'expert:manage' },
+      },
+      {
+        path: 'projects/:projectId/experts',
+        name: 'project-experts',
+        component: () => import('../views/expert/ProjectExperts.vue'),
+        meta: { title: '项目专家', permission: 'expert:use' },
+      },
+      {
         path: 'account/password',
         name: 'password',
         component: () => import('../views/account/PasswordView.vue'),

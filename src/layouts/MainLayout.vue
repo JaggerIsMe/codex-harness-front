@@ -156,6 +156,8 @@ const menuItems = computed(() =>
     { path: '/devices', label: '设备管理', icon: Monitor, permission: 'device:manage' },
     { path: '/workspaces', label: '执行目录', icon: Files, permission: 'device:manage' },
     { path: '/skills', label: 'Skills', icon: Sparkles, permission: 'skill:manage' },
+    { path: '/experts', label: '专家管理', icon: Users, permission: 'expert:manage' },
+    { path: '/expert-market', label: '专家市场', icon: Sparkles, permission: 'expert:read' },
     { path: '/users', label: '用户管理', icon: Users, permission: 'system:user:manage' },
     { path: '/projects', label: '我的项目', icon: Folder, permission: 'workspace:use' },
     { path: '/account/password', label: '修改密码', icon: KeyRound, permission: '' },

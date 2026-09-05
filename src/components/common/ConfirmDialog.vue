@@ -16,8 +16,8 @@
       >
       <AlertDialogFooter
         ><AlertDialogCancel @click="finishConfirmation(false)">取消</AlertDialogCancel
-        ><AlertDialogAction @click="finishConfirmation(true)"
-          >确认</AlertDialogAction
+        ><AppButton tone="primary" @click="finishConfirmation(true)"
+          >确认</AppButton
         ></AlertDialogFooter
       >
     </AlertDialogContent>
@@ -25,6 +25,7 @@
 </template>
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue'
+import AppButton from '@/components/common/AppButton.vue'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -33,8 +34,8 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogCancel,
-  AlertDialogAction,
 } from '@/components/ui/alert-dialog'
 import { confirmation, finishConfirmation } from '@/lib/confirm'
+// Resolve the choice before closing. AlertDialogAction closes first and would resolve cancellation.
 onBeforeUnmount(() => finishConfirmation(false))
 </script>

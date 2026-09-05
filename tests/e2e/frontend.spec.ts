@@ -54,6 +54,259 @@ const skill = {
   versions: [{ id: 6, version: '1.0', status: 'ACTIVE', fileSize: 1024, sha256: 'a'.repeat(64) }],
 }
 
+test('conversation keeps its creation-time expert and turn requests cannot switch it', async ({
+  page,
+}, testInfo) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  const experts = [
+    {
+      expertId: 10,
+      expertVersionId: 100,
+      versionNo: 1,
+      name: 'Java 开发专家',
+      description: '负责 Java 开发与代码审查',
+      available: true,
+    },
+    {
+      expertId: 20,
+      expertVersionId: 200,
+      versionNo: 1,
+      name: '数据库专家',
+      description: '负责数据库设计与查询优化',
+      available: true,
+    },
+  ]
+  const turns: Record<string, unknown>[] = []
+  await page.route('**/conversations/4/expert', (route) =>
+    route.fulfill({
+      json: response({
+        expertId: 10,
+        expertVersionId: 100,
+        name: experts[0].name,
+        selectionRevision: 1,
+        projectRevision: 3,
+        available: true,
+      }),
+    }),
+  )
+  await page.route('**/active-turn', (route) => route.fulfill({ json: response(null) }))
+  await page.route('**/approvals', (route) => route.fulfill({ json: response([]) }))
+  await page.route('**/conversations/4/turns', async (route) => {
+    turns.push(route.request().postDataJSON())
+    await route.fulfill({ json: response({ id: 1000 + turns.length, status: 'COMPLETED' }) })
+  })
+  await page.goto('/projects/3?id=4')
+  await expect(page.locator('.composer')).toContainText('Java 开发专家')
+  await expect(page.locator('.composer')).toContainText('创建时固定，不可更改')
+  for (const message of ['分析项目', '继续分析']) {
+    await page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送').fill(message)
+    await page.getByRole('button', { name: '发送任务', exact: true }).click()
+    await expect(page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')).toHaveValue('')
+  }
+  expect(turns.every((turn) => !('expertId' in turn))).toBe(true)
+  await page.reload()
+  await expect(page.locator('.composer')).toContainText('Java 开发专家')
+  await expect(page.getByRole('button', { name: '选择会话专家' })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('expert-conversation.png'), fullPage: true })
+  expect(errors).toEqual([])
+})
+
+test('expert market enables a published version in the selected project', async ({ page }) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  const expert = { id: 10, name: 'Java 专家', description: 'Java 开发', publishedVersionId: 100 }
+  let binding: Record<string, unknown> | null = null
+  await page.route('**/api/v1/expert-market**', (route) =>
+    route.fulfill({ json: response([expert]) }),
+  )
+  await page.route('**/projects/3/experts', async (route) => {
+    if (route.request().method() === 'POST') binding = route.request().postDataJSON()
+    await route.fulfill({
+      json: response({
+        projectRevision: binding ? 1 : 0,
+        experts: binding
+          ? [
+              {
+                expertId: 10,
+                expertVersionId: 100,
+                versionNo: 1,
+                name: expert.name,
+                description: expert.description,
+                available: true,
+              },
+            ]
+          : [],
+      }),
+    })
+  })
+  await page.goto('/expert-market')
+  await page.getByRole('button', { name: '启用到项目', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('combobox').selectOption('3')
+  await dialog.getByRole('button', { name: '启用 / 升级', exact: true }).click()
+  await expect(page).toHaveURL(/projects\/3\/experts/)
+  await expect(page.getByRole('cell', { name: 'v1', exact: true })).toBeVisible()
+  expect(binding).toEqual({ expertVersionId: 100, projectRevision: 0 })
+  expect(errors).toEqual([])
+})
+
+test('project expert button signals and directly applies an available upgrade', async ({
+  page,
+}) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  let upgraded = false
+  let request: Record<string, unknown> | undefined
+  await page.route('**/api/v1/projects/3/experts', async (route) => {
+    if (route.request().method() === 'POST') {
+      request = route.request().postDataJSON()
+      upgraded = true
+    }
+    await route.fulfill({
+      json: response({
+        projectRevision: upgraded ? 2 : 1,
+        experts: [
+          {
+            expertId: 10,
+            expertVersionId: upgraded ? 101 : 100,
+            versionNo: upgraded ? 2 : 1,
+            latestVersionId: 101,
+            latestVersionNo: 2,
+            upgradeAvailable: !upgraded,
+            name: 'Java 开发专家',
+            description: 'Java 开发',
+            available: true,
+          },
+        ],
+      }),
+    })
+  })
+
+  await page.goto('/projects/3?id=4')
+  await expect(page.getByLabel('项目专家有新版本')).toBeVisible()
+  await page.getByRole('link', { name: /项目专家/ }).click()
+  await expect(page.getByText('可升级至 v2')).toBeVisible()
+  await page.getByRole('button', { name: '升级到 v2', exact: true }).click()
+  await expect.poll(() => request).toEqual({ expertVersionId: 101, projectRevision: 1 })
+  await expect(page.getByRole('cell', { name: 'v2', exact: true })).toBeVisible()
+  await expect(page.getByText('可升级至 v2')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('expert administration keeps MCP and knowledge as unavailable extension sections', async ({
+  page,
+}) => {
+  await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  let draft: Record<string, unknown> | null = null
+  await page.route('**/admin/experts**', async (route) => {
+    if (route.request().method() === 'POST') draft = route.request().postDataJSON()
+    await route.fulfill({
+      json: response(route.request().method() === 'GET' ? [] : { id: 10, ...draft }),
+    })
+  })
+  await page.goto('/experts')
+  await page.getByRole('button', { name: '创建专家' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('暂未接入，后续拓展')).toHaveCount(2)
+  await dialog.getByLabel('名称', { exact: true }).fill('Java 专家')
+  await dialog.getByLabel('系统提示词', { exact: true }).fill('负责 Java 开发')
+  await dialog.getByRole('button', { name: '保存草稿' }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(draft).toMatchObject({
+    name: 'Java 专家',
+    systemPrompt: '负责 Java 开发',
+    mcpBindings: [],
+    knowledgeBindings: [],
+  })
+})
+
+for (const action of [
+  { name: '禁用', path: 'disable', status: 'DISABLED', label: '已禁用' },
+  { name: '下架', path: 'unpublish', status: 'UNPUBLISHED', label: '已下架' },
+]) {
+  test(`expert confirmation submits ${action.path} exactly once and refreshes status`, async ({
+    page,
+  }) => {
+    const errors = await fixtures(page)
+    const expert = {
+      id: 10,
+      name: 'Java 专家',
+      description: 'Java 开发',
+      status: 'PUBLISHED',
+      revision: 7,
+    }
+    const requests: { path: string; revision: number }[] = []
+    await page.route('**/api/v1/admin/experts**', async (route) => {
+      if (route.request().method() === 'POST') {
+        requests.push({
+          path: new URL(route.request().url()).pathname,
+          ...route.request().postDataJSON(),
+        })
+        expert.status = action.status
+        expert.revision++
+      }
+      await route.fulfill({
+        json: {
+          status: 'success',
+          code: 200,
+          info: '',
+          data: route.request().method() === 'GET' ? [expert] : expert,
+        },
+      })
+    })
+    await page.goto('/experts')
+    const button = page.getByRole('button', { name: action.name, exact: true })
+    await button.click()
+    await expect(page.getByRole('alertdialog')).toBeVisible()
+    await page.getByRole('alertdialog').getByRole('button', { name: '取消', exact: true }).click()
+    await expect(page.getByRole('alertdialog')).toHaveCount(0)
+    expect(requests).toEqual([])
+    await button.click()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('alertdialog')).toHaveCount(0)
+    expect(requests).toEqual([])
+    await button.click()
+    const confirm = page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true })
+    if (action.path === 'disable') {
+      await confirm.focus()
+      await confirm.press('Enter')
+    } else {
+      await confirm.click()
+    }
+    await expect.poll(() => requests.length).toBe(1)
+    expect(requests).toEqual([{ path: `/api/v1/admin/experts/10/${action.path}`, revision: 7 }])
+    await expect(page.getByRole('cell', { name: action.label, exact: true })).toBeVisible()
+    await expect(page.getByRole('alertdialog')).toHaveCount(0)
+    expect(errors).toEqual([])
+  })
+}
+
+test('expert publish records the compatible upgrade decision', async ({ page }) => {
+  const errors = await fixtures(page)
+  const expert = {
+    id: 10,
+    name: 'Java 专家',
+    description: 'Java 开发',
+    status: 'PUBLISHED',
+    revision: 7,
+  }
+  let request: Record<string, unknown> | undefined
+  await page.route('**/api/v1/admin/experts**', async (route) => {
+    if (route.request().method() === 'POST') request = route.request().postDataJSON()
+    await route.fulfill({ json: response(route.request().method() === 'GET' ? [expert] : expert) })
+  })
+  await page.goto('/experts')
+  await page.getByRole('button', { name: '发布新版本', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('checkbox', { name: '兼容升级' }).check()
+  await dialog.getByRole('button', { name: '发布', exact: true }).click()
+  await expect.poll(() => request).toEqual({ revision: 7, compatibleUpgrade: true })
+  await expect(dialog).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
 test('logical Message streaming deduplicates updates and survives page reload', async ({
   page,
 }) => {
@@ -193,7 +446,15 @@ async function fixtures(page: Page, authenticated = true) {
     username: '测试管理员',
     displayName: '测试管理员',
     roles: ['SYS_ADMIN'],
-    permissions: ['system:user:manage', 'device:manage', 'skill:manage', 'workspace:use'],
+    permissions: [
+      'system:user:manage',
+      'device:manage',
+      'skill:manage',
+      'workspace:use',
+      'expert:manage',
+      'expert:read',
+      'expert:use',
+    ],
     mustChangePassword: false,
   }
   const errors: string[] = []
@@ -236,8 +497,34 @@ async function fixtures(page: Page, authenticated = true) {
     else if (path === '/projects/3') data = project
     else if (path === '/projects/3/conversations') data = [conversation]
     else if (path === '/projects/3/conversations/4') data = conversation
+    else if (/^\/projects\/\d+\/experts$/.test(path))
+      data = {
+        projectRevision: 1,
+        experts: [
+          {
+            expertId: 10,
+            expertVersionId: 100,
+            versionNo: 1,
+            name: 'Java 开发专家',
+            description: 'Java 开发',
+            available: true,
+          },
+        ],
+      }
     else if (path.endsWith('/attachments/limits'))
       data = { maxFileBytes: 20971520, maxFiles: 5, maxTotalBytes: 52428800, agentSupported: true }
+    else if (path.endsWith('/expert'))
+      data = {
+        expertId: 10,
+        expertVersionId: 100,
+        name: 'Java 开发专家',
+        selectionRevision: 1,
+        projectRevision: 1,
+        available: true,
+        unavailableReason: null,
+      }
+    else if (path.endsWith('/turn-experts'))
+      data = [{ turnId: 7, expertVersionId: null, expertName: null }]
     else if (path.endsWith('/active-turn')) data = { id: 7, status: 'RUNNING' }
     else if (path.endsWith('/message-state'))
       data = {

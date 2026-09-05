@@ -4,8 +4,8 @@ export const getExecutableDevices = (signal?: AbortSignal) =>
   request<ExecutableDevice[]>('get', '/devices/available', undefined, { signal })
 export const retryProjectPreparation = (id: Id) =>
   request<Project>('post', `/projects/${id}/retry-preparation`)
-export function getProjects() {
-  return request<Project[]>('get', `/projects`)
+export function getProjects(signal?: AbortSignal) {
+  return request<Project[]>('get', `/projects`, undefined, { signal })
 }
 export function getProject(projectId: Id) {
   return request<Project>('get', `/projects/${projectId}`)

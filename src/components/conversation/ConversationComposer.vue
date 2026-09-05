@@ -1,5 +1,21 @@
 <template>
   <footer class="composer space-y-3" @dragover.prevent @drop="drop" @paste="paste">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm">{{
+        expertLoading ? '加载会话专家…' : expertSelection?.name || '未绑定专家'
+      }}</span>
+      <span v-if="expertSelection?.expertId" class="text-xs text-muted-foreground"
+        >创建时固定，不可更改</span
+      >
+      <AppButton size="small" @click="reloadExpert">刷新状态</AppButton>
+    </div>
+    <p
+      v-if="expertError || (expertSelection && !expertSelection.available)"
+      role="alert"
+      class="text-sm text-destructive"
+    >
+      {{ expertError || expertSelection?.unavailableReason }}
+    </p>
     <AttachmentUpload
       :rows="rows"
       :limits="limits"
@@ -49,6 +65,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useConversationExpert } from '@/composables/useConversationExpert'
 import { storeToRefs } from 'pinia'
 import { toast } from 'vue-sonner'
 import AppButton from '@/components/common/AppButton.vue'
@@ -59,6 +76,12 @@ import { useConversationAttachments } from '@/composables/useConversationAttachm
 import { useConversationStore } from '@/stores/conversation'
 import type { Id } from '@/types/domain'
 const props = defineProps<{ projectId: Id; conversationId: Id }>()
+const {
+  selection: expertSelection,
+  loading: expertLoading,
+  error: expertError,
+  load: reloadExpert,
+} = useConversationExpert(props.projectId, props.conversationId)
 const store = useConversationStore()
 const { canStartTurn, sending, canInterrupt, interrupting } = storeToRefs(store)
 const { rows, limits, loading, error, blocked, selected, add, upload, remove, clearSent, load } =
@@ -71,6 +94,9 @@ const canSend = computed(
   () =>
     canStartTurn.value &&
     !sending.value &&
+    !expertLoading.value &&
+    !expertError.value &&
+    Boolean(expertSelection.value?.available) &&
     !blocked.value &&
     (message.value.trim() || selected.value.length > 0) &&
     (!selected.value.length || limits.value?.agentSupported),

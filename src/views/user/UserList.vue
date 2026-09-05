@@ -30,12 +30,12 @@
         ><TableHeader
           ><TableRow>
             <TableHead>用户</TableHead><TableHead>角色</TableHead><TableHead>机器</TableHead
-            ><TableHead>状态</TableHead><TableHead>最近登录</TableHead
+            ><TableHead>专家</TableHead><TableHead>状态</TableHead><TableHead>最近登录</TableHead
             ><TableHead class="min-w-96">操作</TableHead>
           </TableRow></TableHeader
         ><TableBody>
           <TableRow v-if="loading"
-            ><TableCell :colspan="6" class="text-center">加载中…</TableCell></TableRow
+            ><TableCell :colspan="7" class="text-center">加载中…</TableCell></TableRow
           >
           <TableRow v-for="user in rows" :key="user.id">
             <TableCell
@@ -44,6 +44,7 @@
             >
             <TableCell>{{ user.roles.includes('SYS_ADMIN') ? '管理员' : '普通用户' }}</TableCell>
             <TableCell>{{ user.deviceIds.length }} 台</TableCell>
+            <TableCell>{{ user.expertIds.length }} 个</TableCell>
             <TableCell
               >{{ user.status === 'ENABLED' ? '启用' : '禁用' }}
               <p v-if="user.mustChangePassword" class="text-xs text-muted-foreground">
@@ -58,6 +59,7 @@
                 <AppButton link @click="edit(user)">编辑</AppButton>
                 <AppButton link @click="select(user, 'role')">角色</AppButton>
                 <AppButton link @click="select(user, 'devices')">分配机器</AppButton>
+                <AppButton link @click="select(user, 'experts')">分配专家</AppButton>
                 <AppButton link @click="select(user, 'password')">重置密码</AppButton>
                 <AppButton
                   link
@@ -70,7 +72,7 @@
             >
           </TableRow>
           <TableRow v-if="!loading && !rows.length"
-            ><TableCell :colspan="6" class="text-center">暂无匹配用户</TableCell></TableRow
+            ><TableCell :colspan="7" class="text-center">暂无匹配用户</TableCell></TableRow
           >
         </TableBody></Table
       >
@@ -85,6 +87,7 @@
     <UserEditorDialog v-model="editor" :user="selected" @saved="saved" />
     <UserRoleDialog v-model="roleDialog" :user="selected" @saved="saved" />
     <UserDevicesDialog v-model="devicesDialog" :user="selected" @saved="saved" />
+    <UserExpertsDialog v-model="expertsDialog" :user="selected" @saved="saved" />
     <ResetPasswordDialog v-model="passwordDialog" :user="selected" @saved="saved" />
   </section>
 </template>
@@ -108,6 +111,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import UserEditorDialog from '@/components/user/UserEditorDialog.vue'
 import UserRoleDialog from '@/components/user/UserRoleDialog.vue'
 import UserDevicesDialog from '@/components/user/UserDevicesDialog.vue'
+import UserExpertsDialog from '@/components/user/UserExpertsDialog.vue'
 import ResetPasswordDialog from '@/components/user/ResetPasswordDialog.vue'
 const rows = ref<ManagedUser[]>([]),
   selected = ref<ManagedUser | null>(null)
@@ -122,6 +126,7 @@ const loading = ref(false),
   editor = ref(false),
   roleDialog = ref(false),
   devicesDialog = ref(false),
+  expertsDialog = ref(false),
   passwordDialog = ref(false)
 let revision = 0
 async function load() {
@@ -158,10 +163,11 @@ function edit(user: ManagedUser | null) {
   selected.value = user
   editor.value = true
 }
-function select(user: ManagedUser, kind: 'role' | 'devices' | 'password') {
+function select(user: ManagedUser, kind: 'role' | 'devices' | 'experts' | 'password') {
   selected.value = user
   if (kind === 'role') roleDialog.value = true
   else if (kind === 'devices') devicesDialog.value = true
+  else if (kind === 'experts') expertsDialog.value = true
   else passwordDialog.value = true
 }
 function saved() {

@@ -41,6 +41,7 @@ export interface User {
 export interface ManagedUser extends Omit<User, 'permissions'> {
   status: 'ENABLED' | 'DISABLED'
   deviceIds: number[]
+  expertIds: number[]
   lastLoginAt?: string
   createdAt?: string
 }
@@ -180,6 +181,7 @@ export interface ProjectInput {
   requestKey: string
 }
 export interface ConversationInput {
+  expertId: Id
   title?: string
   model?: string
 }

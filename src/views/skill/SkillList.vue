@@ -102,7 +102,9 @@
                                 ><TableHead style="min-width: 245px">操作</TableHead></TableRow
                               ></TableHeader
                             ><TableBody
-                              ><template v-for="version in row.versions" :key="version.id"
+                              ><template
+                                v-for="(version, versionIndex) in row.versions"
+                                :key="version.id"
                                 ><TableRow
                                   ><TableCell>{{ version.version }}</TableCell
                                   ><TableCell>{{ formatSize(version.fileSize) }}</TableCell
@@ -130,6 +132,7 @@
                                       @click="openDeploy(version.id)"
                                       >下发</AppButton
                                     ><AppButton
+                                      v-if="versionIndex === 0"
                                       link
                                       :tone="version.status === 'ACTIVE' ? 'danger' : 'success'"
                                       @click="toggleVersion(row, version)"

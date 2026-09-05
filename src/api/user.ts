@@ -13,6 +13,8 @@ export const assignRole = (id: Id, role: string) =>
   request<ManagedUser>('put', `/users/${id}/roles`, { role })
 export const assignDevices = (id: Id, deviceIds: number[]) =>
   request<ManagedUser>('put', `/users/${id}/devices`, { deviceIds })
+export const assignExperts = (id: Id, expertIds: number[]) =>
+  request<ManagedUser>('put', `/users/${id}/experts`, { expertIds })
 export const resetPassword = (id: Id, password: string) =>
   request<void>('post', `/users/${id}/reset-password`, { password })
 export const getRoles = () => request<RoleOption[]>('get', '/roles')
