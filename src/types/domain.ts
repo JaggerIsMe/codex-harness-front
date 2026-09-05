@@ -108,6 +108,7 @@ export interface Conversation {
   codexThreadId: string
 }
 export interface Turn {
+  preparationPhase?: string | null
   id: number
   conversationId?: number
   status: string
@@ -182,7 +183,32 @@ export interface ConversationInput {
   title?: string
   model?: string
 }
+export interface ConversationAttachment {
+  id: Id
+  fileName: string
+  mediaType: string
+  sizeBytes: number
+  sha256: string
+}
+export interface ConversationArtifact {
+  id: Id
+  turnId: Id
+  fileName: string
+  mediaType: string
+  sizeBytes: number
+  sha256: string
+  status: 'UPLOADING' | 'READY' | 'FAILED'
+  errorMessage: string | null
+}
+export interface AttachmentLimits {
+  maxFileBytes: number
+  maxFiles: number
+  maxTotalBytes: number
+  agentSupported: boolean
+}
 export interface TurnInput {
+  attachmentIds?: Id[]
+  clientRequestId?: string
   message: string
   model?: string
   reasoningEffort?: string
@@ -211,6 +237,7 @@ export type MessageType =
   | 'ERROR'
   | 'ACTIVITY'
 export interface Message {
+  attachments?: ConversationAttachment[]
   id: Id
   turnId: number
   sequenceNo: number

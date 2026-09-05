@@ -60,6 +60,11 @@
         >
           <article v-if="message.role === 'USER'" class="message-bubble message-bubble--user">
             <pre>{{ message.content }}</pre>
+            <MessageAttachments
+              :attachments="message.attachments"
+              :project-id="currentConversation.projectId"
+              :conversation-id="currentConversation.id"
+            />
           </article>
 
           <article v-else class="agent-message">
@@ -95,7 +100,35 @@
             <div v-else-if="isStreaming(message)" class="agent-answer agent-answer--pending">
               <span></span>正在组织回答…
             </div>
+            <MessageArtifacts
+              :key="`${currentConversation.id}:${message.turnId}`"
+              :artifacts="artifactsForTurn(message.turnId)"
+              :project-id="currentConversation.projectId"
+              :conversation-id="currentConversation.id"
+              @changed="reloadArtifacts"
+            />
           </article>
+        </div>
+        <p v-if="artifactLoading" role="status" class="p-3 text-sm text-muted-foreground">
+          加载交付文件中…
+        </p>
+        <p v-if="artifactError" role="alert" class="p-3 text-sm text-destructive">
+          {{ artifactError }}
+          <button type="button" class="underline focus-visible:outline-2" @click="reloadArtifacts">
+            重试
+          </button>
+        </p>
+        <div v-if="unplacedArtifacts.length" class="p-3">
+          <p class="text-sm text-muted-foreground">
+            其他历史交付文件（可加载更早消息查看对应回答）
+          </p>
+          <MessageArtifacts
+            :key="`other:${currentConversation.id}`"
+            :artifacts="unplacedArtifacts"
+            :project-id="currentConversation.projectId"
+            :conversation-id="currentConversation.id"
+            @changed="reloadArtifacts"
+          />
         </div>
         <EmptyState v-if="!loading && !messages.length" description="发送第一条任务消息开始 Turn" />
       </div>
@@ -110,44 +143,11 @@
         />
       </div>
 
-      <footer class="composer">
-        <AppInput
-          v-model="messageInput"
-          type="textarea"
-          :rows="3"
-          maxlength="100000"
-          resize="none"
-          placeholder="向 Codex 描述任务，Ctrl + Enter 发送"
-          :disabled="!canStartTurn"
-          @keydown.ctrl.enter.prevent="send"
-        />
-        <div class="composer__footer">
-          <div class="composer-options">
-            <AppInput v-model="turnModel" placeholder="模型（可选）" />
-            <AppSelect v-model="reasoningEffort" clearable placeholder="推理强度">
-              <option v-for="item in reasoningOptions" :key="item" :value="item">{{ item }}</option>
-            </AppSelect>
-          </div>
-          <div>
-            <AppButton
-              v-if="canInterrupt"
-              tone="danger"
-              plain
-              :loading="interrupting"
-              @click="interrupt"
-              >中断 Turn</AppButton
-            >
-            <AppButton
-              tone="primary"
-              :icon="Promotion"
-              :loading="sending"
-              :disabled="!canStartTurn || !messageInput.trim()"
-              @click="send"
-              >发送任务</AppButton
-            >
-          </div>
-        </div>
-      </footer>
+      <ConversationComposer
+        :key="`${currentConversation.projectId}:${currentConversation.id}`"
+        :project-id="currentConversation.projectId"
+        :conversation-id="currentConversation.id"
+      />
     </template>
     <div v-else class="conversation-empty">
       <div class="empty-intro">
@@ -164,18 +164,20 @@
 import type { Approval, Decision, DisplayMessage } from '@/types/domain'
 import EmptyState from '@/components/common/EmptyState.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
-import AppSelect from '@/components/common/AppSelect.vue'
-import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Plus, Send as Promotion, RefreshCw as Refresh } from 'lucide-vue-next'
+import { Plus, RefreshCw as Refresh } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useConversationStore } from '../../stores/conversation'
 import { buildConversationDisplayMessages } from '../../utils/conversationMessages'
 import ApprovalCard from './ApprovalCard.vue'
 import AgentProcess from './AgentProcess.vue'
 import MessageContent from './MessageContent.vue'
+import ConversationComposer from './ConversationComposer.vue'
+import MessageAttachments from './MessageAttachments.vue'
+import MessageArtifacts from './MessageArtifacts.vue'
+import { useConversationArtifacts } from '@/composables/useConversationArtifacts'
 
 defineProps<{ projectName?: string }>()
 const emit = defineEmits<{ create: [] }>()
@@ -186,21 +188,36 @@ const {
   currentTurn,
   pendingApprovals,
   isTurnActive,
-  canInterrupt,
-  canStartTurn,
   loading,
-  sending,
-  interrupting,
   resolvingId,
 } = storeToRefs(conversationStore)
-const messageInput = ref('')
-const turnModel = ref('')
-const reasoningEffort = ref('')
 const messagePanel = ref<HTMLElement | null>(null)
-const reasoningOptions = ['low', 'medium', 'high', 'xhigh']
 const shouldStickToBottom = ref(true)
 
 const displayMessages = computed(() => buildConversationDisplayMessages(messages.value))
+const {
+  rows: artifacts,
+  loading: artifactLoading,
+  error: artifactError,
+  reload: reloadArtifacts,
+} = useConversationArtifacts(() => currentConversation.value)
+const artifactsByTurn = computed(() => {
+  const groups = new Map<string, typeof artifacts.value>()
+  for (const artifact of artifacts.value) {
+    const id = String(artifact.turnId)
+    groups.set(id, [...(groups.get(id) || []), artifact])
+  }
+  return groups
+})
+const artifactsForTurn = (turnId: number) => artifactsByTurn.value.get(String(turnId)) || []
+const unplacedArtifacts = computed(() => {
+  const visible = new Set(
+    displayMessages.value
+      .filter((message) => message.role === 'ASSISTANT')
+      .map((message) => String(message.turnId)),
+  )
+  return artifacts.value.filter((artifact) => !visible.has(String(artifact.turnId)))
+})
 
 const messageScrollToken = computed(() => {
   const last = messages.value[messages.value.length - 1]
@@ -219,7 +236,7 @@ function turnStatusLabel(status: string) {
   return (
     (
       {
-        CREATED: '任务正在下发',
+        CREATED: currentTurn.value?.preparationPhase ? '正在准备附件' : '任务正在下发',
         RUNNING: 'Codex 正在执行',
         WAITING_APPROVAL: '等待审批',
       } as Record<string, string>
@@ -233,22 +250,6 @@ function isStreaming(message: DisplayMessage) {
     isTurnActive.value &&
     String(message.turnId) === String(currentTurn.value?.id)
   )
-}
-
-async function send() {
-  const content = messageInput.value.trim()
-  if (!content || !canStartTurn.value) return
-  const result = await conversationStore.startNewTurn({
-    message: content,
-    model: turnModel.value.trim() || undefined,
-    reasoningEffort: reasoningEffort.value || undefined,
-  })
-  if (result) messageInput.value = ''
-}
-
-async function interrupt() {
-  await conversationStore.interruptCurrentTurn()
-  toast.success('中断命令已发送')
 }
 
 async function decide(approval: Approval, decision: Decision) {
@@ -273,7 +274,6 @@ watch(messageScrollToken, () => scrollToBottom())
 watch(
   () => currentConversation.value?.id,
   () => {
-    messageInput.value = ''
     shouldStickToBottom.value = true
     scrollToBottom(true)
   },

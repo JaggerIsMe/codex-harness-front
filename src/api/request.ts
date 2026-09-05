@@ -96,3 +96,7 @@ export async function downloadSkillVersion(skillId: Id, versionId: Id): Promise<
     })
   ).data
 }
+
+export async function downloadFile(url: string, signal?: AbortSignal): Promise<Blob> {
+  return (await client.get<Blob>(url, { responseType: 'blob', timeout: 120000, signal })).data
+}

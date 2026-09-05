@@ -123,6 +123,70 @@ test('logical Message streaming deduplicates updates and survives page reload', 
   expect(errors).toEqual([])
 })
 
+test('Conversation artifacts recover on reload, retry publication, and download original filenames', async ({
+  page,
+}) => {
+  const errors = await fixtures(page)
+  let socket: WebSocketRoute | undefined
+  let status = 'UPLOADING'
+  let retryCount = 0
+  let startedTurns = 0
+  const artifact = () => ({
+    id: '91',
+    turnId: '7',
+    fileName: '项目分析报告.txt',
+    mediaType: 'application/octet-stream',
+    sizeBytes: 8,
+    sha256: 'a'.repeat(64),
+    status,
+    errorMessage: status === 'FAILED' ? '上传失败，请重试' : null,
+  })
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '请求成功', data })
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/turns')) startedTurns++
+  })
+  await page.route('**/artifacts', (route) => route.fulfill({ json: response([artifact()]) }))
+  await page.route('**/artifacts/91/retry', (route) => {
+    retryCount++
+    status = 'READY'
+    return route.fulfill({ json: response(artifact()) })
+  })
+  await page.route('**/artifacts/91/download', (route) =>
+    route.fulfill({
+      contentType: 'application/octet-stream',
+      body: 'original',
+    }),
+  )
+  await page.routeWebSocket('**/ws/client?*', (connected) => {
+    socket = connected
+  })
+  await page.goto('/projects/3?id=4')
+  await expect(page.getByRole('list', { name: '交付文件' })).toContainText('正在准备下载')
+  await expect.poll(() => Boolean(socket)).toBe(true)
+  status = 'FAILED'
+  socket!.send(
+    JSON.stringify({ type: 'ARTIFACT_CHANGED', payload: { conversationId: '4', turnId: '7' } }),
+  )
+  await expect(page.getByRole('button', { name: '重试上传' })).toBeVisible()
+  await page.getByRole('button', { name: '重试上传' }).click()
+  await expect(page.getByRole('list', { name: '交付文件' })).toContainText('项目分析报告.txt')
+  await expect(page.getByRole('button', { name: '下载', exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('list', { name: '交付文件' })).toHaveCount(1)
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: '下载', exact: true }).click()
+  const download = await pending
+  expect(download.suggestedFilename()).toBe('项目分析报告.txt')
+  const stream = await download.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
+  expect(Buffer.concat(chunks).toString()).toBe('original')
+  expect(retryCount).toBe(1)
+  expect(startedTurns).toBe(0)
+  expect(errors).toEqual([])
+  await page.screenshot({ path: 'test-results/conversation-artifacts.png', fullPage: true })
+})
+
 async function fixtures(page: Page, authenticated = true) {
   const profile = {
     id: 1,
@@ -172,6 +236,8 @@ async function fixtures(page: Page, authenticated = true) {
     else if (path === '/projects/3') data = project
     else if (path === '/projects/3/conversations') data = [conversation]
     else if (path === '/projects/3/conversations/4') data = conversation
+    else if (path.endsWith('/attachments/limits'))
+      data = { maxFileBytes: 20971520, maxFiles: 5, maxTotalBytes: 52428800, agentSupported: true }
     else if (path.endsWith('/active-turn')) data = { id: 7, status: 'RUNNING' }
     else if (path.endsWith('/message-state'))
       data = {
@@ -347,5 +413,78 @@ test('sidebar search and mobile drawer keep conversations accessible', async ({ 
   await page.getByRole('button', { name: '打开导航' }).click()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: '打开导航' })).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('conversation uploads and sends an attachment-only message and restores its download', async ({
+  page,
+}) => {
+  const errors = await fixtures(page)
+  const attachment = {
+    id: '90',
+    fileName: 'requirements.txt',
+    sizeBytes: 5,
+    mediaType: 'application/octet-stream',
+    sha256: 'a'.repeat(64),
+  }
+  let sent: { message: string; attachmentIds: string[]; clientRequestId: string } | null = null
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  await page.route('**/active-turn', (route) => route.fulfill({ json: response(null) }))
+  await page.route('**/attachments', (route) =>
+    route.fulfill({ json: response(route.request().method() === 'POST' ? attachment : []) }),
+  )
+  await page.route('**/conversations/4/turns', async (route) => {
+    sent = route.request().postDataJSON()
+    await route.fulfill({
+      json: response({ id: 8, status: 'CREATED', preparationPhase: 'DOWNLOADING' }),
+    })
+  })
+  await page.route('**/message-state?*', (route) =>
+    route.fulfill({
+      json: response({
+        turnId: sent ? 8 : null,
+        cursor: 0,
+        hasMore: false,
+        degraded: false,
+        resetRequired: false,
+        updates: [],
+        messages: sent
+          ? [
+              {
+                id: 80,
+                turnId: 8,
+                sequenceNo: 1,
+                role: 'USER',
+                messageType: 'TEXT',
+                content: '',
+                attachments: [attachment],
+              },
+            ]
+          : [],
+      }),
+    }),
+  )
+  await page.goto('/projects/3?id=4')
+  await expect(page.getByRole('button', { name: '添加附件' })).toBeEnabled()
+  await page.getByLabel('选择会话附件').setInputFiles({
+    name: 'requirements.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('hello'),
+  })
+  await expect(page.getByText('已上传，发送时传输到 Agent')).toBeVisible()
+  await page.getByRole('button', { name: '发送任务' }).click()
+  await expect.poll(() => sent).not.toBeNull()
+  expect(sent!.message).toBe('')
+  expect(sent!.attachmentIds).toEqual(['90'])
+  expect(sent!.clientRequestId).toBeTruthy()
+  await expect(page.getByRole('button', { name: /requirements.txt ·/ })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('button', { name: /requirements.txt ·/ })).toBeVisible()
+  await page.route('**/attachments/90/download', (route) =>
+    route.fulfill({ contentType: 'application/octet-stream', body: 'hello' }),
+  )
+  const downloaded = page.waitForEvent('download')
+  await page.getByRole('button', { name: /requirements.txt ·/ }).click()
+  expect((await downloaded).suggestedFilename()).toBe('requirements.txt')
   expect(errors).toEqual([])
 })

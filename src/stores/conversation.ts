@@ -137,7 +137,7 @@ export const useConversationStore = defineStore('conversation', () => {
     ACTIVE_TURN_STATUSES.includes(currentTurn.value?.status || ''),
   )
   const canInterrupt = computed(() =>
-    ['RUNNING', 'WAITING_APPROVAL'].includes(currentTurn.value?.status || ''),
+    ['CREATED', 'RUNNING', 'WAITING_APPROVAL'].includes(currentTurn.value?.status || ''),
   )
   const canStartTurn = computed(
     () =>
@@ -272,8 +272,8 @@ export const useConversationStore = defineStore('conversation', () => {
       if (currentConversation.value?.id !== conversationId || currentProjectId.value !== projectId)
         return null
       currentTurn.value = result?.data || null
-      await refreshCurrent({ silent: true })
-      return currentTurn.value
+      await refreshCurrent({ silent: true }).catch(() => undefined)
+      return result?.data || null
     } finally {
       sending.value = false
     }
@@ -288,6 +288,7 @@ export const useConversationStore = defineStore('conversation', () => {
         currentConversation.value.id,
         currentTurn.value!.id,
       )
+      await refreshCurrent({ silent: true })
     } finally {
       interrupting.value = false
     }
