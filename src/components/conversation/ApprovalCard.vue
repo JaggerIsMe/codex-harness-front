@@ -18,7 +18,7 @@
         plain
         :loading="loading"
         @click="emit('decision', 'ACCEPT_FOR_SESSION')"
-        v-if="auth.can('device:manage')"
+        v-if="auth.can('device:manage') && approval.approvalType !== 'MCP_TOOL_CALL'"
         >本会话批准</AppButton
       >
       <AppButton
@@ -52,8 +52,13 @@ const emit = defineEmits<{ decision: [value: Decision] }>()
 
 function approvalTypeLabel(type: string) {
   return (
-    ({ COMMAND_EXECUTION: '命令执行', FILE_CHANGE: '文件变更' } as Record<string, string>)[type] ||
-    type
+    (
+      {
+        COMMAND_EXECUTION: '命令执行',
+        FILE_CHANGE: '文件变更',
+        MCP_TOOL_CALL: 'MCP 工具调用',
+      } as Record<string, string>
+    )[type] || type
   )
 }
 

@@ -38,17 +38,20 @@
           }}
         </label>
       </fieldset>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <fieldset
-          v-for="label in ['MCP', '知识库']"
-          :key="label"
-          disabled
-          class="rounded-lg border border-dashed p-4 text-muted-foreground"
-        >
-          <legend class="px-2">{{ label }}</legend>
-          <p class="text-sm">暂未接入，后续拓展</p>
-        </fieldset>
-      </div>
+      <fieldset class="rounded-lg border p-4">
+        <legend class="px-2 font-medium">MCP（绑定固定配置版本）</legend>
+        <p v-if="loading" role="status">正在加载 MCP 配置…</p>
+        <p v-else-if="!mcpOptions.length" class="text-sm text-muted-foreground">
+          暂无可用 MCP 配置，可在“MCP管理”中创建。
+        </p>
+        <label v-for="option in mcpOptions" :key="option.id" class="flex items-center gap-2 py-1">
+          <input v-model="form.mcpBindings" type="checkbox" :value="option.id" />{{ option.label }}
+        </label>
+      </fieldset>
+      <fieldset disabled class="rounded-lg border border-dashed p-4 text-muted-foreground">
+        <legend class="px-2">知识库</legend>
+        <p class="text-sm">暂未接入，后续拓展</p>
+      </fieldset>
       <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
     </form>
     <template #footer
@@ -64,6 +67,7 @@ import AppButton from '@/components/common/AppButton.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import { getSkills } from '@/api/skill'
 import { saveExpert } from '@/api/expert'
+import { listSelectableMcpVersions } from '@/api/mcp'
 import type { Expert, ExpertDraft } from '@/types/expert'
 const props = defineProps<{ modelValue: boolean; expert: Expert | null }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [] }>()
@@ -76,6 +80,7 @@ const form = reactive<ExpertDraft>({
   knowledgeBindings: [],
 })
 const options = ref<{ id: number; label: string }[]>([])
+const mcpOptions = ref<{ id: number; label: string }[]>([])
 const loading = ref(false),
   saving = ref(false),
   error = ref('')
@@ -95,12 +100,17 @@ watch(
       description: value?.description || '',
       systemPrompt: value?.systemPrompt || '',
       skillVersionIds: [...(value?.skillVersionIds || [])],
+      mcpBindings: [...(value?.mcpBindings || [])],
+      knowledgeBindings: [],
       revision: value?.revision,
     })
     error.value = ''
     loading.value = true
     try {
-      const result = await getSkills({ status: 'ENABLED' }, controller.signal)
+      const [result, mcpResult] = await Promise.all([
+        getSkills({ status: 'ENABLED' }, controller.signal),
+        listSelectableMcpVersions(controller.signal),
+      ])
       if (active) {
         const selected = new Set(form.skillVersionIds)
         options.value = result.data.flatMap((skill) => {
@@ -115,6 +125,15 @@ watch(
         form.skillVersionIds = options.value
           .filter((option) => selected.has(option.id))
           .map((option) => option.id)
+        const selectedMcp = new Set(form.mcpBindings)
+        mcpOptions.value = mcpResult.data.map((option) => ({
+          id: Number(option.versionId),
+          label: `${option.name} · v${option.versionNo} · ${option.serverCode} · ${option.transportType === 'STDIO' ? 'STDIO' : 'HTTP'}`,
+        }))
+        for (const id of selectedMcp) {
+          if (!mcpOptions.value.some((option) => option.id === id))
+            mcpOptions.value.push({ id, label: `不可用 MCP 配置版本 #${id}（保存前需取消）` })
+        }
       }
     } catch (cause) {
       if (active) error.value = cause instanceof Error ? cause.message : 'Skills 加载失败'

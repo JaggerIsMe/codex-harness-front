@@ -1,0 +1,17 @@
+.mcp-page {
+  .mcp-version-cell {
+    padding: 16px 24px 22px 56px;
+    background: #f8fafc;
+  }
+
+  code {
+    color: #334155;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .mcp-page .mcp-version-cell {
+    padding-left: 12px;
+  }
+}

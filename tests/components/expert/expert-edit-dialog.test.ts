@@ -3,10 +3,12 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ExpertEditDialog from '@/components/expert/ExpertEditDialog.vue'
 import { getSkills } from '@/api/skill'
 import { saveExpert } from '@/api/expert'
+import { listSelectableMcpVersions } from '@/api/mcp'
 import type { Expert } from '@/types/expert'
 
 vi.mock('@/api/skill', () => ({ getSkills: vi.fn() }))
 vi.mock('@/api/expert', () => ({ saveExpert: vi.fn() }))
+vi.mock('@/api/mcp', () => ({ listSelectableMcpVersions: vi.fn() }))
 
 let wrapper: VueWrapper
 afterEach(() => wrapper?.unmount())
@@ -54,6 +56,22 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
     info: '',
     data: {} as Expert,
   })
+  vi.mocked(listSelectableMcpVersions).mockResolvedValue({
+    status: 'success',
+    code: 200,
+    info: '',
+    data: [
+      {
+        configurationId: 7,
+        versionId: 70,
+        versionNo: 2,
+        serverCode: 'github',
+        name: 'GitHub MCP',
+        transportType: 'STDIO',
+        configDigest: 'a'.repeat(64),
+      },
+    ],
+  })
   const expert: Expert = {
     id: 10,
     name: 'Java 专家',
@@ -63,6 +81,7 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
     revision: 3,
     systemPrompt: 'Review Java',
     skillVersionIds: [50],
+    mcpBindings: [70],
   }
   wrapper = mount(ExpertEditDialog, {
     props: { modelValue: false, expert },
@@ -74,8 +93,10 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
 
   expect(wrapper.text()).toContain('code-review · 2.0.0')
   expect(wrapper.text()).not.toContain('code-review · 1.0.0')
-  const checkbox = wrapper.get('input[type="checkbox"]')
-  expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+  expect(wrapper.text()).toContain('GitHub MCP · v2 · github · STDIO')
+  const checkboxes = wrapper.findAll('input[type="checkbox"]')
+  expect((checkboxes[0].element as HTMLInputElement).checked).toBe(true)
+  expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true)
   await wrapper
     .findAll('button')
     .find((button) => button.text() === '保存草稿')!
@@ -83,6 +104,6 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
   await flushPromises()
   expect(saveExpert).toHaveBeenCalledWith(
     10,
-    expect.objectContaining({ skillVersionIds: [51], revision: 3 }),
+    expect.objectContaining({ skillVersionIds: [51], mcpBindings: [70], revision: 3 }),
   )
 })

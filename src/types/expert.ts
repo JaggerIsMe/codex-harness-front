@@ -8,13 +8,14 @@ export interface Expert {
   revision: number
   systemPrompt: string | null
   skillVersionIds: number[]
+  mcpBindings: number[]
 }
 export interface ExpertDraft {
   name: string
   description: string
   systemPrompt: string
   skillVersionIds: number[]
-  mcpBindings: string[]
+  mcpBindings: number[]
   knowledgeBindings: string[]
   revision?: number
 }
@@ -25,6 +26,7 @@ export interface ExpertVersion {
   name: string
   description: string
   skillVersionIds: number[]
+  mcpBindings: number[]
   compatibleUpgrade: boolean
 }
 export interface ProjectExpert {
