@@ -24,9 +24,6 @@
       <FormField label="会话标题" prop="title">
         <AppInput v-model="form.title" maxlength="255" placeholder="例如：修复订单导出问题" />
       </FormField>
-      <FormField label="模型（可选）">
-        <AppInput v-model="form.model" maxlength="128" placeholder="留空时使用 Agent 默认模型" />
-      </FormField>
     </AppForm>
     <template #footer>
       <AppButton @click="close">取消</AppButton>
@@ -65,14 +62,14 @@ const submitting = ref(false)
 const loadingExperts = ref(false)
 const expertError = ref('')
 const experts = ref<ProjectExpert[]>([])
-const form = reactive({ expertId: '', title: '', model: '' })
+const form = reactive({ expertId: '', title: '' })
 const rules: FormRules = {}
 
 watch(
   () => props.modelValue,
   async (visible, _, onCleanup) => {
     if (!visible) return
-    Object.assign(form, { expertId: '', title: '', model: '' })
+    Object.assign(form, { expertId: '', title: '' })
     const controller = new AbortController()
     onCleanup(() => controller.abort())
     loadingExperts.value = true
@@ -100,7 +97,6 @@ async function submit() {
     const response = await createConversation(props.projectId, {
       expertId: Number(form.expertId),
       title: form.title.trim() || undefined,
-      model: form.model.trim() || undefined,
     })
     emit('created', response.data)
     close()

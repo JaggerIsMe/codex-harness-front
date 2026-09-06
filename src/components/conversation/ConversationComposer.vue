@@ -38,14 +38,7 @@
       @keydown.ctrl.enter.prevent="send"
     />
     <div class="composer__footer">
-      <div class="composer-options">
-        <AppInput v-model="model" placeholder="模型（可选）" :disabled="sending" />
-        <AppSelect v-model="effort" clearable placeholder="推理强度" :disabled="sending">
-          <option v-for="item in ['low', 'medium', 'high', 'xhigh']" :key="item" :value="item">
-            {{ item }}
-          </option>
-        </AppSelect>
-      </div>
+      <div class="text-xs text-muted-foreground">模型由管理员按 Device 统一配置</div>
       <div class="flex gap-2">
         <AppButton
           v-if="canInterrupt"
@@ -70,7 +63,6 @@ import { storeToRefs } from 'pinia'
 import { toast } from 'vue-sonner'
 import AppButton from '@/components/common/AppButton.vue'
 import AppInput from '@/components/common/AppInput.vue'
-import AppSelect from '@/components/common/AppSelect.vue'
 import AttachmentUpload from './AttachmentUpload.vue'
 import { useConversationAttachments } from '@/composables/useConversationAttachments'
 import { useConversationStore } from '@/stores/conversation'
@@ -86,9 +78,7 @@ const store = useConversationStore()
 const { canStartTurn, sending, canInterrupt, interrupting } = storeToRefs(store)
 const { rows, limits, loading, error, blocked, selected, add, upload, remove, clearSent, load } =
   useConversationAttachments(props.projectId, props.conversationId)
-const message = ref(''),
-  model = ref(''),
-  effort = ref('')
+const message = ref('')
 let request: { fingerprint: string; id: string } | null = null
 const canSend = computed(
   () =>
@@ -105,8 +95,6 @@ async function send() {
   if (!canSend.value) return
   const input = {
     message: message.value.trim(),
-    model: model.value.trim() || undefined,
-    reasoningEffort: effort.value || undefined,
     attachmentIds: selected.value.map((item) => item.id),
   }
   const fingerprint = JSON.stringify(input)

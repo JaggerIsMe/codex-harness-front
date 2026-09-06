@@ -20,6 +20,12 @@ const routes = [
         meta: { title: '专家市场', permission: 'expert:read' },
       },
       {
+        path: 'models',
+        name: 'model-management',
+        component: () => import('../views/model/ModelManagement.vue'),
+        meta: { title: '模型管理', permission: 'model:manage' },
+      },
+      {
         path: 'mcp-configurations',
         name: 'mcp-management',
         component: () => import('../views/mcp/McpManagement.vue'),

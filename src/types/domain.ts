@@ -10,6 +10,7 @@ export interface Device {
   osName: string
   osVersion: string
   isolationMode: string
+  managedModels: boolean
   lastHeartbeatAt: string
 }
 export interface Workspace {
@@ -183,7 +184,6 @@ export interface ProjectInput {
 export interface ConversationInput {
   expertId: Id
   title?: string
-  model?: string
 }
 export interface ConversationAttachment {
   id: Id
@@ -212,8 +212,6 @@ export interface TurnInput {
   attachmentIds?: Id[]
   clientRequestId?: string
   message: string
-  model?: string
-  reasoningEffort?: string
 }
 export interface SkillInput {
   skillName: string

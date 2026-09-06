@@ -88,6 +88,9 @@
                     @click="router.push({ name: 'workspaces', query: { deviceId: row.id } })"
                     >工作区</AppButton
                   >
+                  <AppButton v-if="auth.can('model:manage')" link @click="configureModel(row)"
+                    >模型</AppButton
+                  >
                 </TableCell></TableRow
               ></template
             ><TableRow v-if="!filteredDevices.length && !loading"
@@ -101,6 +104,7 @@
     </section>
 
     <CreateEnrollmentDialog v-model="enrollmentVisible" />
+    <DeviceModelDialog v-model="modelVisible" :device="modelDevice" @saved="load" />
   </div>
 </template>
 
@@ -126,13 +130,18 @@ import { confirmAction } from '@/lib/confirm'
 import { updateDeviceStatus } from '../../api/agent'
 import { useAgentStore } from '../../stores/agent'
 import CreateEnrollmentDialog from '../../components/agent/CreateEnrollmentDialog.vue'
+import DeviceModelDialog from '@/components/model/DeviceModelDialog.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const agentStore = useAgentStore()
 const loading = ref(false)
 const loadError = ref('')
 const changingId = ref<Id | null>(null)
 const enrollmentVisible = ref(false)
+const modelVisible = ref(false)
+const modelDevice = ref<Device | null>(null)
 const keywordInput = ref('')
 const statusInput = ref('')
 const filters = ref({ keyword: '', status: '' })
@@ -172,6 +181,11 @@ function resetSearch() {
   keywordInput.value = ''
   statusInput.value = ''
   search()
+}
+
+function configureModel(device: Device) {
+  modelDevice.value = device
+  modelVisible.value = true
 }
 
 async function load() {
