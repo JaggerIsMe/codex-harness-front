@@ -186,6 +186,8 @@ export interface ConversationInput {
   title?: string
 }
 export interface ConversationAttachment {
+  workspacePath?: string | null
+  workspaceOperationId?: Id | null
   id: Id
   fileName: string
   mediaType: string
@@ -307,6 +309,9 @@ export interface RealtimeEvent {
   deviceId?: Id
   correlationId?: Id
   payload?: {
+    projectId?: Id
+    path?: string
+    operationId?: Id
     conversationId?: Id
     turnId?: Id
     codexTurnId?: string

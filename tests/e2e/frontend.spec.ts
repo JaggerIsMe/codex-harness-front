@@ -54,6 +54,107 @@ const skill = {
   versions: [{ id: 6, version: '1.0', status: 'ACTIVE', fileSize: 1024, sha256: 'a'.repeat(64) }],
 }
 
+test('workspace tree creates folders, uploads into selection and downloads current files', async ({
+  page,
+}, testInfo) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  type Entry = { name: string; path: string; type: string; sizeBytes: number; modifiedAt: number }
+  const directories: Record<string, Entry[]> = { '': [] }
+  const operations: Record<
+    string,
+    { id: string; kind: string; path: string; status: string; error: null }
+  > = {}
+  let sequence = 1
+  const uploads: string[] = []
+  await page.route('**/workspace-files**', async (route) => {
+    const url = new URL(route.request().url())
+    const endpoint = url.pathname.split('/workspace-files')[1]
+    if (endpoint?.endsWith('/content')) {
+      await route.fulfill({
+        body: 'downloaded workspace content',
+        contentType: 'application/octet-stream',
+      })
+      return
+    }
+    if (endpoint?.startsWith('/operations/')) {
+      await route.fulfill({ json: response(operations[endpoint.split('/')[2]]) })
+      return
+    }
+    if (!endpoint) {
+      const path = url.searchParams.get('path') || ''
+      await route.fulfill({
+        json: response({
+          path,
+          generation: String(sequence),
+          scannedAt: Date.now(),
+          entries: directories[path] || [],
+          nextCursor: null,
+          loaded: true,
+          online: true,
+          supported: true,
+          operation: null,
+          maxFileBytes: 20971520,
+        }),
+      })
+      return
+    }
+    let path = ''
+    if (endpoint === '/directories') {
+      path = route.request().postDataJSON().path
+      const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+      directories[parent].push({
+        name: path.split('/').pop()!,
+        path,
+        type: 'DIRECTORY',
+        sizeBytes: 0,
+        modifiedAt: Date.now(),
+      })
+      directories[path] = []
+    } else if (endpoint === '/uploads') {
+      const parent = url.searchParams.get('path') || ''
+      uploads.push(parent)
+      path = `${parent}/report.txt`
+      directories[parent].push({
+        name: 'report.txt',
+        path,
+        type: 'FILE',
+        sizeBytes: 12,
+        modifiedAt: Date.now(),
+      })
+    } else path = route.request().postDataJSON().path
+    const id = String(++sequence)
+    const operation = { id, kind: endpoint || '', path, status: 'SUCCEEDED', error: null }
+    operations[id] = operation
+    await route.fulfill({ json: response(operation) })
+  })
+  await page.goto('/projects/3?id=4')
+  await page.getByRole('button', { name: '工作区文件', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: '工作区文件' })
+  await expect(panel.getByText('空目录', { exact: true })).toBeVisible()
+  await panel.getByRole('button', { name: '新建文件夹' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox').fill('reports')
+  await dialog.getByRole('textbox').press('Enter')
+  await expect(dialog).not.toBeVisible()
+  await expect(panel).toContainText('上传位置：reports')
+  await panel.getByLabel('上传工作区文件').setInputFiles({
+    name: 'report.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('hello workspace'),
+  })
+  await expect(panel.getByRole('button', { name: '下载 report.txt', exact: true })).toBeEnabled()
+  expect(uploads).toEqual(['reports'])
+  const pending = page.waitForEvent('download')
+  await panel.getByRole('button', { name: '下载 report.txt', exact: true }).click()
+  const download = await pending
+  expect(download.suggestedFilename()).toBe('report.txt')
+  await page.screenshot({ path: testInfo.outputPath('workspace-files.png'), fullPage: true })
+  await panel.getByRole('button', { name: '收起工作区文件' }).click()
+  await expect(panel).not.toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('conversation keeps its creation-time expert and turn requests cannot switch it', async ({
   page,
 }, testInfo) => {
@@ -710,12 +811,25 @@ test('conversation uploads and sends an attachment-only message and restores its
   const attachment = {
     id: '90',
     fileName: 'requirements.txt',
+    workspacePath: 'requirements.txt',
+    workspaceOperationId: '100',
     sizeBytes: 5,
     mediaType: 'application/octet-stream',
     sha256: 'a'.repeat(64),
   }
   let sent: { message: string; attachmentIds: string[]; clientRequestId: string } | null = null
   const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  await page.route('**/workspace-files/operations/100', (route) =>
+    route.fulfill({
+      json: response({
+        id: '100',
+        kind: 'UPLOAD_WORKSPACE_FILE',
+        path: 'requirements.txt',
+        status: 'SUCCEEDED',
+        error: null,
+      }),
+    }),
+  )
   await page.route('**/active-turn', (route) => route.fulfill({ json: response(null) }))
   await page.route('**/attachments', (route) =>
     route.fulfill({ json: response(route.request().method() === 'POST' ? attachment : []) }),
@@ -758,7 +872,7 @@ test('conversation uploads and sends an attachment-only message and restores its
     mimeType: 'text/plain',
     buffer: Buffer.from('hello'),
   })
-  await expect(page.getByText('已上传，发送时传输到 Agent')).toBeVisible()
+  await expect(page.getByText('已就绪：requirements.txt')).toBeVisible()
   await page.getByRole('button', { name: '发送任务' }).click()
   await expect.poll(() => sent).not.toBeNull()
   expect(sent!.message).toBe('')

@@ -15,7 +15,7 @@
       <span v-if="loading" role="status">正在恢复附件…</span>
       <span v-else-if="limits && !limits.agentSupported">升级 Agent 后可发送附件</span>
       <span v-else-if="limits" class="text-muted-foreground"
-        >可拖拽或粘贴文件 · 最多 {{ limits.maxFiles }} 个 · 单个
+        >上传到工作区根目录 · 最多 {{ limits.maxFiles }} 个 · 单个
         {{ Math.round(limits.maxFileBytes / 1048576) }} MB</span
       >
     </div>
@@ -33,16 +33,20 @@
           <p class="truncate" :title="row.name">
             {{ row.name }} · {{ (row.size / 1024).toFixed(1) }} KB
           </p>
-          <span v-if="row.status === 'uploading'" role="status">上传中 {{ row.progress }}%</span>
+          <span v-if="row.status === 'uploading'" role="status">{{
+            row.attachment?.workspaceOperationId ? '正在确认工作区文件…' : `上传中 ${row.progress}%`
+          }}</span>
           <span v-else-if="row.status === 'removing'">移除中…</span>
-          <span v-else-if="row.status === 'ready'" class="text-muted-foreground"
-            >已上传，发送时传输到 Agent</span
-          >
+          <span v-else-if="row.status === 'ready'" class="text-muted-foreground">{{
+            row.attachment?.workspacePath
+              ? `已就绪：${row.attachment.workspacePath}`
+              : '历史附件已就绪'
+          }}</span>
           <span v-else role="alert" class="text-destructive">{{ row.error }}</span>
         </div>
-        <AppButton v-if="row.status === 'error'" :disabled="disabled" @click="emit('retry', row)"
-          >重试</AppButton
-        >
+        <AppButton v-if="row.status === 'error'" :disabled="disabled" @click="emit('retry', row)">{{
+          row.attachment ? '检查状态' : '重试'
+        }}</AppButton>
         <AppButton
           :disabled="disabled || row.status === 'removing'"
           :aria-label="`移除 ${row.name}`"
@@ -51,6 +55,9 @@
         >
       </li>
     </ul>
+    <p v-if="rows.length" class="text-xs text-muted-foreground">
+      移除附件只取消消息关联，已写入工作区的文件会保留；同名冲突请移除附件、修改本地文件名后重新上传。
+    </p>
   </div>
 </template>
 

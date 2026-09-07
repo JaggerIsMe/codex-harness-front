@@ -4,6 +4,8 @@ import { flushPromises } from '@vue/test-utils'
 import * as api from '@/api/attachment'
 import { useConversationAttachments } from '@/composables/useConversationAttachments'
 import type { ApiResponse } from '@/types/domain'
+import { waitWorkspaceOperation } from '@/api/workspace-file'
+vi.mock('@/api/workspace-file', () => ({ waitWorkspaceOperation: vi.fn() }))
 vi.mock('@/api/attachment', () => ({
   getAttachmentLimits: vi.fn(),
   getPendingAttachments: vi.fn(),
@@ -45,6 +47,46 @@ it('restores server drafts and keeps them available for attachment-only messages
   state.clearSent()
   expect(state.selected.value).toEqual([])
   expect(api.removeAttachment).not.toHaveBeenCalled()
+})
+it('waits for Agent workspace persistence before allowing a new attachment turn', async () => {
+  const uploaded = { ...attachment, workspacePath: 'hello.txt', workspaceOperationId: '100' }
+  vi.mocked(api.uploadAttachment).mockResolvedValue(result(uploaded))
+  let finish!: () => void
+  vi.mocked(waitWorkspaceOperation).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = () =>
+          resolve({
+            id: '100',
+            kind: 'UPLOAD_WORKSPACE_FILE',
+            path: 'hello.txt',
+            status: 'SUCCEEDED',
+            error: null,
+          })
+      }),
+  )
+  const { state } = create()
+  await flushPromises()
+  state.add([new File(['hello'], 'hello.txt')])
+  await flushPromises()
+  expect(state.blocked.value).toBe(true)
+  expect(state.rows.value[0]?.progress).toBe(99)
+  finish()
+  await flushPromises()
+  expect(state.blocked.value).toBe(false)
+  expect(state.selected.value).toEqual([uploaded])
+})
+it('aborts restored attachment operation waits on conversation disposal', async () => {
+  vi.mocked(api.getPendingAttachments).mockResolvedValue(
+    result([{ ...attachment, workspaceOperationId: '100' }]),
+  )
+  vi.mocked(waitWorkspaceOperation).mockImplementation(() => new Promise(() => {}))
+  const { state, scope } = create()
+  await flushPromises()
+  expect(state.blocked.value).toBe(true)
+  const signal = vi.mocked(waitWorkspaceOperation).mock.calls[0]![2]
+  scope.stop()
+  expect(signal.aborted).toBe(true)
 })
 it('blocks sending during upload and aborts on conversation disposal, ignoring late results', async () => {
   let finish!: (value: ApiResponse<typeof attachment>) => void

@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import type { AttachmentLimits, ConversationAttachment, Id } from '@/types/domain'
+import { waitWorkspaceOperation } from '@/api/workspace-file'
 import {
   getAttachmentLimits,
   getPendingAttachments,
@@ -44,16 +45,42 @@ export function useConversationAttachments(pid: Id, cid: Id) {
         size: attachment.sizeBytes,
         attachment,
         progress: 100,
-        status: 'ready',
+        status: attachment.workspaceOperationId ? 'uploading' : 'ready',
       }))
+      for (const row of rows.value)
+        if (row.attachment?.workspaceOperationId) void awaitWorkspace(row)
     } catch (cause) {
       if (!disposed) error.value = cause instanceof Error ? cause.message : '附件加载失败'
     } finally {
       if (!disposed) loading.value = false
     }
   }
+  async function awaitWorkspace(row: AttachmentDraft, existing?: AbortController) {
+    const controller = existing || new AbortController()
+    if (!existing) uploads.set(row.key, controller)
+    try {
+      const id = row.attachment?.workspaceOperationId
+      if (id) await waitWorkspaceOperation(pid, id, controller.signal)
+      if (disposed || controller.signal.aborted) return
+      row.progress = 100
+      row.status = 'ready'
+    } catch (cause) {
+      if (!disposed && !controller.signal.aborted) {
+        row.status = 'error'
+        row.error = cause instanceof Error ? cause.message : '写入工作区失败'
+      }
+    } finally {
+      if (!existing) uploads.delete(row.key)
+    }
+  }
   async function upload(row: AttachmentDraft) {
-    if (!row.file || disposed) return
+    if (disposed) return
+    if (row.attachment) {
+      row.status = 'uploading'
+      await awaitWorkspace(row)
+      return
+    }
+    if (!row.file) return
     const controller = new AbortController()
     uploads.set(row.key, controller)
     row.status = 'uploading'
@@ -65,8 +92,8 @@ export function useConversationAttachments(pid: Id, cid: Id) {
       })
       if (disposed || controller.signal.aborted) return
       row.attachment = result.data
-      row.progress = 100
-      row.status = 'ready'
+      row.progress = 99
+      await awaitWorkspace(row, controller)
     } catch (cause) {
       if (!disposed && !controller.signal.aborted) {
         row.status = 'error'

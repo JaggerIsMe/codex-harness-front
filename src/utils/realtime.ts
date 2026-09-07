@@ -26,6 +26,9 @@ export function parseRealtimeEvent(frame: string): RealtimeEvent | null {
       correlationId: id(value.correlationId),
       payload: payload
         ? {
+            projectId: id(payload.projectId),
+            path: text('path'),
+            operationId: id(payload.operationId),
             conversationId: id(payload.conversationId),
             turnId: id(payload.turnId),
             codexTurnId: text('codexTurnId'),
