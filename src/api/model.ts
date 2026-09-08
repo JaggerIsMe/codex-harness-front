@@ -40,10 +40,12 @@ export const getDeviceModelAssignment = (deviceId: Id, signal?: AbortSignal) =>
   })
 export const assignDeviceModel = (
   deviceId: Id,
-  modelConfigurationVersionId: Id,
+  runtimeMode: 'LOCAL_CODEX' | 'MANAGED_PROVIDER',
+  modelConfigurationVersionId: Id | null,
   revision: number,
 ) =>
   request<DeviceModelAssignment>('put', `/devices/${deviceId}/model-assignment`, {
+    runtimeMode,
     modelConfigurationVersionId,
     revision,
   })

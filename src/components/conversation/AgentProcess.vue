@@ -124,7 +124,7 @@ function toViewItem(item: ProcessItem) {
   if (item.messageType === 'FILE_CHANGE')
     return viewItem(item, 'file', '修改文件', readableContent(content))
   if (item.messageType === 'ERROR')
-    return viewItem(item, 'error', '遇到警告', readableContent(content), true)
+    return viewItem(item, 'error', '遇到警告', errorContent(content))
   return activityViewItem(item, content)
 }
 
@@ -168,6 +168,17 @@ function viewItem(
   narrative = false,
 ) {
   return { ...item, kind, title, content, narrative }
+}
+
+function errorContent(content: string): string {
+  // Provider errors have their own schema (often error.message). Do not project
+  // them onto activity fields, which would discard the actual failure details.
+  try {
+    const value: unknown = JSON.parse(content)
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return content
+  }
 }
 
 function readableContent(content: string) {

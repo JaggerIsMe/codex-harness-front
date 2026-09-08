@@ -42,12 +42,13 @@ export interface ModelSelectableVersion {
 }
 export interface DeviceModelAssignment {
   deviceId: Id
-  modelConfigurationVersionId: Id
+  runtimeMode: 'LOCAL_CODEX' | 'MANAGED_PROVIDER'
+  modelConfigurationVersionId: Id | null
   revision: number
-  configurationId: Id
-  versionNo: number
-  configurationCode: string
+  configurationId: Id | null
+  versionNo: number | null
+  configurationCode: string | null
   name: string
-  modelId: string
+  modelId: string | null
   updatedAt: string
 }

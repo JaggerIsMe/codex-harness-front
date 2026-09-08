@@ -11,6 +11,7 @@ export interface Device {
   osVersion: string
   isolationMode: string
   managedModels: boolean
+  modelRuntimeTargets: boolean
   lastHeartbeatAt: string
 }
 export interface Workspace {
