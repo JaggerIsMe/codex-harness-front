@@ -25,15 +25,95 @@ export const useProjectStore = defineStore('project', () => {
   let listRevision = 0
   let controller: AbortController | null = null
   const pendingUpdates = new Map<string, Project>()
+  const activityTimes = ref<Record<string, string>>({})
+  const promotions = ref<Record<string, { at: number; order: number }>>({})
+  const activityControllers = new Map<string, AbortController>()
+  let promotionOrder = 0
   const hasMore = computed(() => page.value > 0 && page.value * size.value < total.value)
   const visibleProjects = computed(() => {
     const byId = new Map(projects.value.map((project) => [String(project.id), project]))
     const ids = [...new Set([...(keyword.value ? [] : pinnedIds.value), ...listedIds.value])]
-    return ids.flatMap((id) => {
+    const rows = ids.flatMap((id) => {
       const project = byId.get(id)
       return project ? [project] : []
     })
+    return rows.sort((a, b) => {
+      const first = promotions.value[String(a.id)]
+      const second = promotions.value[String(b.id)]
+      const difference =
+        Math.max(projectActivityTime(b), second?.at || 0) -
+        Math.max(projectActivityTime(a), first?.at || 0)
+      return difference || (second?.order || 0) - (first?.order || 0)
+    })
   })
+
+  function time(value?: string | null) {
+    const parsed = value ? Date.parse(value) : NaN
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  function projectActivityTime(project: Project) {
+    return Math.max(
+      time(project.lastActivityAt || project.createdAt),
+      time(activityTimes.value[String(project.id)]),
+    )
+  }
+
+  function latestActivityTime() {
+    return Math.max(
+      0,
+      ...projects.value.map(projectActivityTime),
+      ...Object.values(activityTimes.value).map(time),
+      ...Object.values(promotions.value).map((value) => value.at),
+    )
+  }
+
+  /** Keep server activity monotonic when an older page arrives after a live update. */
+  function retainActivity(project: Project) {
+    const id = String(project.id)
+    const previous = activityTimes.value[id]
+    if (time(project.lastActivityAt) > time(previous)) {
+      activityTimes.value[id] = project.lastActivityAt!
+      return project
+    }
+    return previous ? { ...project, lastActivityAt: previous } : project
+  }
+
+  function updateConversationActivity(projectId: Id, lastActivityAt?: string | null) {
+    const id = String(projectId)
+    if (lastActivityAt && time(lastActivityAt) > time(activityTimes.value[id])) {
+      activityTimes.value[id] = lastActivityAt
+      ensureActivityProject(projectId)
+    }
+  }
+
+  function promoteProject(projectId: Id) {
+    const id = String(projectId)
+    // Use the observed server clock as the baseline; browser clock skew must not pin a project.
+    promotions.value[id] = { at: latestActivityTime(), order: ++promotionOrder }
+    ensureActivityProject(projectId)
+  }
+
+  function ensureActivityProject(projectId: Id) {
+    const id = String(projectId)
+    const known = projects.value.find((project) => String(project.id) === id)
+    if (known) {
+      if (!listedIds.value.includes(id) && !pinnedIds.value.includes(id))
+        pinnedIds.value = [id, ...pinnedIds.value]
+      return
+    }
+    if (activityControllers.has(id)) return
+    const request = new AbortController()
+    activityControllers.set(id, request)
+    void getProject(projectId, request.signal)
+      .then((result) => {
+        if (!request.signal.aborted) upsertProject(result.data)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (activityControllers.get(id) === request) activityControllers.delete(id)
+      })
+  }
 
   function reset() {
     projectRevision++
@@ -50,6 +130,11 @@ export const useProjectStore = defineStore('project', () => {
     error.value = moreError.value = ''
     loading.value = loadingMore.value = false
     pendingUpdates.clear()
+    activityControllers.forEach((request) => request.abort())
+    activityControllers.clear()
+    activityTimes.value = {}
+    promotions.value = {}
+    promotionOrder = 0
   }
 
   async function fetchPage(nextPage: number, resetList = false) {
@@ -58,6 +143,7 @@ export const useProjectStore = defineStore('project', () => {
     const request = new AbortController()
     controller = request
     const revision = ++listRevision
+    const beforePromotion = promotionOrder
     const append = nextPage > 1
     if (resetList) {
       listedIds.value = []
@@ -75,10 +161,17 @@ export const useProjectStore = defineStore('project', () => {
       })
       if (request.signal.aborted || revision !== listRevision) return []
       const result = normalizePageResult(response.data, nextPage, PAGE_SIZE)
-      const rows = result.items.map((item) => pendingUpdates.get(String(item.id)) || item)
+      const rows = result.items.map((item) =>
+        retainActivity(pendingUpdates.get(String(item.id)) || item),
+      )
       const byId = new Map(projects.value.map((item) => [String(item.id), item]))
       rows.forEach((item) => byId.set(String(item.id), item))
       projects.value = [...byId.values()]
+      // A list requested before a user action must not undo that action when it resolves.
+      const latest = latestActivityTime()
+      for (const promotion of Object.values(promotions.value)) {
+        if (promotion.order > beforePromotion) promotion.at = Math.max(promotion.at, latest)
+      }
       const incoming = rows.map((item) => String(item.id))
       listedIds.value = [
         ...new Set(append ? [...listedIds.value, ...incoming] : [...incoming, ...listedIds.value]),
@@ -116,16 +209,21 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   async function loadProject(projectId: Id) {
-    if (String(currentProject.value?.id || '') !== String(projectId)) currentProject.value = null
+    const changed = String(currentProject.value?.id || '') !== String(projectId)
+    if (changed) currentProject.value = null
     const revision = ++projectRevision
     const result = await getProject(projectId)
     if (revision !== projectRevision) return null
     currentProject.value = result?.data || null
-    if (currentProject.value) upsertProject(currentProject.value)
+    if (currentProject.value) {
+      upsertProject(currentProject.value)
+      if (changed) promoteProject(projectId)
+    }
     return currentProject.value
   }
 
   function upsertProject(project: Project) {
+    project = retainActivity(project)
     const id = String(project.id)
     if (controller) pendingUpdates.set(id, project)
     if (String(currentProject.value?.id) === id) currentProject.value = project
@@ -152,6 +250,8 @@ export const useProjectStore = defineStore('project', () => {
     setKeyword,
     loadProject,
     upsertProject,
+    promoteProject,
+    updateConversationActivity,
     reset,
   }
 })

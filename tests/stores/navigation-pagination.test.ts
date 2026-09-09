@@ -14,6 +14,8 @@ vi.mock('@/stores/project', () => ({ useProjectStore: () => visibleProjects }))
 const visibleProjects = reactive({
   visibleProjects: [] as { id: number; provisioningStatus: string }[],
   projects: [] as Project[],
+  promoteProject: vi.fn(),
+  updateConversationActivity: vi.fn(),
 })
 
 function conversation(id: number, title = `Conversation ${id}`): Conversation {

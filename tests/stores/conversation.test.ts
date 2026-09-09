@@ -217,9 +217,12 @@ it('does not duplicate a replacement snapshot or allow stale deltas to overwrite
 it('records the opened Conversation and its Turn without clearing global state on departure', async () => {
   const store = useConversationStore()
   await store.openConversation(3, 4)
-  expect(navigation.upsert).toHaveBeenCalledWith(conversation)
+  expect(navigation.upsert).toHaveBeenCalledWith(conversation, { promote: true })
   expect(navigation.recordTurn).toHaveBeenCalledWith(4, { id: 7, status: 'RUNNING' })
   expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'message', 7)
+
+  await store.refreshCurrent({ silent: true })
+  expect(navigation.upsert).toHaveBeenLastCalledWith(conversation, { promote: false })
 
   navigation.clearIssue.mockClear()
   store.clearCurrent()

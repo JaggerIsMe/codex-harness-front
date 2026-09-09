@@ -99,6 +99,7 @@ export interface Project {
   workspaceStatus: string
   conversationCount: number
   createdAt: string
+  lastActivityAt?: string | null
 }
 export interface Conversation {
   id: number
@@ -109,6 +110,7 @@ export interface Conversation {
   title: string
   status: string
   codexThreadId: string
+  lastActivityAt?: string | null
   latestTurnId?: Id | null
   latestTurnStatus?: string | null
   latestTurnFailureMessage?: string | null

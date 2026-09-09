@@ -2,9 +2,11 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useNavigationStore } from '@/stores/navigation'
 import { getConversations } from '@/api/conversation'
+import { getProject } from '@/api/project'
 import type { ApiResponse, Conversation } from '@/types/domain'
 
 vi.mock('@/api/conversation', () => ({ getConversations: vi.fn() }))
+vi.mock('@/api/project', () => ({ getProject: vi.fn(), getProjects: vi.fn() }))
 const conversation: Conversation = {
   id: 4,
   projectId: 3,
@@ -23,6 +25,7 @@ const result = (data: Conversation[]): ApiResponse<Conversation[]> => ({
 })
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(getProject).mockRejectedValue(new Error('Project metadata is outside this fixture'))
   setActivePinia(createPinia())
 })
 

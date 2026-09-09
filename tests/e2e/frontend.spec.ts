@@ -2440,6 +2440,7 @@ test('workspace PDF preview renders locally, preserves pages across layout and r
 
 test.describe('workspace sidebar pagination', () => {
   type PagedConversation = typeof conversation & {
+    lastActivityAt: string
     latestTurnId: number | null
     latestTurnStatus: string | null
     latestTurnHasIncompleteMessage: boolean
@@ -2461,6 +2462,7 @@ test.describe('workspace sidebar pagination', () => {
       id: index + 3,
       projectName: index === 24 ? '后页项目25' : `分页项目${String(index + 1).padStart(2, '0')}`,
       conversationCount: index === 0 ? 121 : index === 24 ? 41 : 0,
+      lastActivityAt: new Date(Date.UTC(2026, 8, 9, 12) - index * 60000).toISOString(),
     }))
     const makeConversations = (projectId: number, startId: number, count: number) =>
       Array.from({ length: count }, (_, index): PagedConversation => ({
@@ -2477,6 +2479,9 @@ test.describe('workspace sidebar pagination', () => {
               ? '后页直达会话'
               : `后页会话${String(index + 1).padStart(3, '0')}`,
         codexThreadId: `thread-${startId + index}`,
+        lastActivityAt: new Date(
+          Date.parse(projects.find((item) => item.id === projectId)!.lastActivityAt) - index * 1000,
+        ).toISOString(),
         latestTurnId: startId + index + 10000,
         latestTurnStatus: projectId === 3 && index === 10 ? 'RUNNING' : 'COMPLETED',
         latestTurnHasIncompleteMessage: false,
@@ -2551,6 +2556,7 @@ test.describe('workspace sidebar pagination', () => {
           id: 900,
           projectName: route.request().postDataJSON().projectName,
           conversationCount: 0,
+          lastActivityAt: new Date().toISOString(),
         }
         projects.push(created)
         conversations[created.id] = []
@@ -2558,11 +2564,13 @@ test.describe('workspace sidebar pagination', () => {
         return
       }
       const keyword = new URL(route.request().url()).searchParams.get('keyword') || ''
-      const filtered = projects.filter(
-        (item) =>
-          projectMatches(item, keyword) ||
-          conversations[item.id]?.some((value) => value.title.includes(keyword)),
-      )
+      const filtered = projects
+        .filter(
+          (item) =>
+            projectMatches(item, keyword) ||
+            conversations[item.id]?.some((value) => value.title.includes(keyword)),
+        )
+        .sort((left, right) => Date.parse(right.lastActivityAt) - Date.parse(left.lastActivityAt))
       await fulfillPage(route, 'projects', null, filtered)
     })
     await page.route(/\/api\/v1\/projects\/\d+$/, (route) => {
@@ -2579,6 +2587,7 @@ test.describe('workspace sidebar pagination', () => {
           projectId,
           projectName: projects.find((item) => item.id === projectId)!.projectName,
           title: route.request().postDataJSON().title,
+          lastActivityAt: new Date().toISOString(),
           latestTurnId: null,
           latestTurnStatus: null,
           latestTurnHasIncompleteMessage: false,
@@ -2952,6 +2961,161 @@ test.describe('workspace sidebar pagination', () => {
         (read) => read.page === 1 && read.size === (read.kind === 'projects' ? 20 : 10),
       ),
     ).toBe(true)
+    expect(state.errors).toEqual([])
+  })
+
+  test('project activity promotes a later-page Project without losing loaded items or the draft', async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date('2026-09-10T04:00:00Z') })
+    const state = await paginationFixtures(page)
+    const tokenSource = state.conversations[3]![1]!
+    tokenSource.latestTurnStatus = 'RUNNING'
+    await page.goto('/projects/3?id=3001')
+    const projectNames = state.sidebar.locator('.workspace-project__name')
+    await expect(projectNames).toHaveCount(20)
+    await state.sidebar.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(projectNames).toHaveCount(25)
+    await expect(state.link('后页会话001')).toBeVisible()
+    const loadedNames = await projectNames.allTextContents()
+    const draft = page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')
+    await draft.fill('后台项目排序变化时仍保留我的草稿')
+    await page.clock.fastForward(1000)
+    const background = state.conversations[27]![0]!
+    background.latestTurnId = 400001
+    background.latestTurnStatus = 'RUNNING'
+    background.lastActivityAt = '2026-09-10T04:00:01Z'
+    state.projects.find((item) => item.id === 27)!.lastActivityAt = background.lastActivityAt
+    await expect.poll(() => state.sockets.length).toBe(1)
+    state.sockets[0]!.send(
+      JSON.stringify({
+        type: 'TURN_STARTED',
+        payload: { projectId: 27, conversationId: background.id, turnId: background.latestTurnId },
+      }),
+    )
+    await expect(projectNames.first()).toHaveText('后页项目25')
+    await expect(
+      state.link('后页会话001').locator('.workspace-conversation__activity'),
+    ).toHaveAttribute('data-state', 'running')
+    await page.clock.fastForward(1000)
+    for (const sequence of [1, 2]) {
+      state.sockets[0]!.send(
+        JSON.stringify({
+          type: 'MESSAGE_UPDATED',
+          payload: {
+            projectId: 3,
+            conversationId: tokenSource.id,
+            turnId: tokenSource.latestTurnId,
+            sequence,
+          },
+        }),
+      )
+    }
+    const statusCount = state.statusReads.length
+    await page.clock.fastForward(16000)
+    await expect.poll(() => state.statusReads.length).toBeGreaterThan(statusCount)
+    await expect(projectNames.first()).toHaveText('后页项目25')
+    expect((await projectNames.allTextContents()).sort()).toEqual(loadedNames.sort())
+    await expect(state.projectNode('分页项目01').locator('a.workspace-conversation')).toHaveCount(
+      10,
+    )
+    await expect(draft).toHaveValue('后台项目排序变化时仍保留我的草稿')
+    await expect(page.getByRole('heading', { name: '分页会话001', exact: true })).toBeVisible()
+    expect(state.reads.filter((read) => read.kind === 'projects').map((read) => read.page)).toEqual(
+      [1, 2],
+    )
+    expect(state.errors).toEqual([])
+  })
+
+  test('project activity follows background status timestamps and restores server order after reload', async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date('2026-09-10T04:00:00Z') })
+    const state = await paginationFixtures(page)
+    await page.goto('/devices')
+    const projectNames = state.sidebar.locator('.workspace-project__name')
+    await expect(projectNames).toHaveCount(20)
+    await state.sidebar.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(projectNames).toHaveCount(25)
+    await expect(state.link('后页会话001')).toBeVisible()
+    await expect(projectNames.first()).toHaveText('分页项目01')
+    const background = state.conversations[27]![0]!
+    background.latestTurnId = 400002
+    background.latestTurnStatus = 'COMPLETED'
+    background.lastActivityAt = '2026-09-10T04:00:01Z'
+    state.projects.find((item) => item.id === 27)!.lastActivityAt = background.lastActivityAt
+    const statusCount = state.statusReads.length
+    const listCount = state.reads.length
+    await page.clock.fastForward(16000)
+    await expect
+      .poll(() =>
+        state.statusReads.slice(statusCount).some((read) => read.ids.includes(background.id)),
+      )
+      .toBe(true)
+    await expect(projectNames.first()).toHaveText('后页项目25')
+    await expect(projectNames).toHaveCount(25)
+    await expect(
+      state.link('后页会话001').locator('.workspace-conversation__activity'),
+    ).toHaveAttribute('data-state', 'completed')
+    expect(state.reads).toHaveLength(listCount)
+    await page.reload()
+    await expect(projectNames.first()).toHaveText('后页项目25')
+    await expect(projectNames).toHaveCount(20)
+    await state.sidebar.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(projectNames).toHaveCount(25)
+    expect(new Set(await projectNames.allTextContents()).size).toBe(25)
+    await expect(projectNames.first()).toHaveText('后页项目25')
+    expect(state.errors).toEqual([])
+  })
+
+  test('project activity keeps search membership isolated when a hidden Project becomes active', async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date('2026-09-10T04:00:00Z') })
+    const state = await paginationFixtures(page)
+    await page.goto('/devices')
+    const projectNames = state.sidebar.locator('.workspace-project__name')
+    await expect(projectNames).toHaveCount(20)
+    await state.sidebar.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(state.link('后页会话001')).toBeVisible()
+    const search = state.sidebar.getByRole('textbox', { name: '搜索项目或会话' })
+    await search.fill('分页项目01')
+    await search.press('Enter')
+    await expect(projectNames).toHaveCount(1)
+    await expect(projectNames.first()).toHaveText('分页项目01')
+    const background = state.conversations[27]![0]!
+    background.latestTurnId = 400003
+    background.latestTurnStatus = 'RUNNING'
+    background.lastActivityAt = '2026-09-10T04:00:01Z'
+    state.projects.find((item) => item.id === 27)!.lastActivityAt = background.lastActivityAt
+    await page.clock.fastForward(1000)
+    await expect.poll(() => state.sockets.length).toBe(1)
+    state.sockets[0]!.send(
+      JSON.stringify({
+        type: 'TURN_STARTED',
+        payload: { projectId: 27, conversationId: background.id, turnId: background.latestTurnId },
+      }),
+    )
+    await page.clock.fastForward(16000)
+    await expect(projectNames).toHaveCount(1)
+    await expect(projectNames.first()).toHaveText('分页项目01')
+    const beforeSearch = state.reads.length
+    await search.press('Enter')
+    await expect
+      .poll(() =>
+        state.reads
+          .slice(beforeSearch)
+          .some(
+            (read) => read.kind === 'projects' && read.keyword === '分页项目01' && read.settled,
+          ),
+      )
+      .toBe(true)
+    await expect(projectNames).toHaveCount(1)
+    await expect(projectNames.first()).toHaveText('分页项目01')
+    await search.fill('')
+    await search.press('Enter')
+    await expect(projectNames.first()).toHaveText('后页项目25')
+    await expect(projectNames).toHaveCount(20)
     expect(state.errors).toEqual([])
   })
 

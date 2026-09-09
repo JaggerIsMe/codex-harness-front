@@ -254,8 +254,13 @@ watch(
 )
 watch(
   () => conversationStore.currentConversation,
-  (value) => {
-    if (value) navigation.upsert(value)
+  (value, previous) => {
+    if (value)
+      navigation.upsert(value, {
+        promote:
+          String(value.id) !== String(previous?.id) ||
+          String(value.projectId) !== String(previous?.projectId),
+      })
   },
 )
 watch(

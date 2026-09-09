@@ -3,12 +3,14 @@ import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { useNavigationStore } from '@/stores/navigation'
 import { useAgentStore } from '@/stores/agent'
 import { getConversations, getConversationStatuses } from '@/api/conversation'
+import { getProject } from '@/api/project'
 import type { ApiResponse, Conversation, RealtimeEvent } from '@/types/domain'
 
 vi.mock('@/api/conversation', () => ({
   getConversations: vi.fn(),
   getConversationStatuses: vi.fn(),
 }))
+vi.mock('@/api/project', () => ({ getProject: vi.fn(), getProjects: vi.fn() }))
 const conversation: Conversation = {
   id: 4,
   projectId: 3,
@@ -36,6 +38,7 @@ beforeEach(() => {
   setActivePinia(pinia)
   vi.mocked(getConversations).mockResolvedValue(result([]))
   vi.mocked(getConversationStatuses).mockResolvedValue(result([]))
+  vi.mocked(getProject).mockRejectedValue(new Error('Project metadata is outside this fixture'))
 })
 afterEach(() => {
   disposePinia(pinia)

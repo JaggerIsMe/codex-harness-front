@@ -270,7 +270,8 @@ export const useConversationStore = defineStore('conversation', () => {
             latestConversation?.latestTurnFailureMessage || turnError.value || 'Agent 执行失败'
       } else if (latestConversation?.status !== 'FAILED') turnError.value = ''
       upsertConversation(currentConversation.value)
-      if (currentConversation.value) navigation.upsert(currentConversation.value)
+      if (currentConversation.value)
+        navigation.upsert(currentConversation.value, { promote: !options.silent })
       if (currentTurn.value) navigation.recordTurn(id, currentTurn.value)
       const latestTurnId =
         currentTurn.value?.id ?? currentConversation.value?.latestTurnId ?? snapshot.turnId

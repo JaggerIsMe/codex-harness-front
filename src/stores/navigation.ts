@@ -77,6 +77,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     }
     next.revision = ++revision
     activities.value[value.id] = next
+    useProjectStore().updateConversationActivity(value.projectId, value.lastActivityAt)
   }
 
   function activity(value: Conversation) {
@@ -158,7 +159,7 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   function recordTurn(conversationId: Id, turn: Turn) {
     const current = activities.value[conversationId]
-    if (!current || !canAdvanceTurn(current.turn, turn)) return
+    if (!current || !canAdvanceTurn(current.turn, turn)) return false
     const newerTurn = !sameId(current.turn?.id, turn.id)
     if (newerTurn) {
       current.issues = {}
@@ -168,7 +169,9 @@ export const useNavigationStore = defineStore('navigation', () => {
     if (current.turn?.status !== turn.status || newerTurn) {
       current.turn = turn
       current.revision = ++revision
+      return true
     }
+    return false
   }
 
   function markIssue(
@@ -342,8 +345,9 @@ export const useNavigationStore = defineStore('navigation', () => {
     }
   }
 
-  function upsert(value: Conversation) {
+  function upsert(value: Conversation, options: { promote?: boolean } = {}) {
     acceptSnapshot(value)
+    if (options.promote !== false) useProjectStore().promoteProject(value.projectId)
     const key = String(value.projectId)
     const matching = matchesKeyword(value)
     if (controllers.has(key)) {
@@ -435,6 +439,12 @@ export const useNavigationStore = defineStore('navigation', () => {
     ids.forEach((id) => scheduleRefresh(id))
   }
 
+  function recordRealtimeTurn(current: ActivitySnapshot, turn: Turn) {
+    if (!recordTurn(current.conversation.id, turn)) return false
+    useProjectStore().promoteProject(current.conversation.projectId)
+    return true
+  }
+
   function applyRealtimeEvent(event: RealtimeEvent | null) {
     if (!event) return
     const payload = event.payload
@@ -442,8 +452,7 @@ export const useNavigationStore = defineStore('navigation', () => {
       for (const current of Object.values(activities.value)) {
         if (!sameId(current.conversation.deviceId, event.deviceId)) continue
         if (isActivityRunning(current)) {
-          if (current.turn)
-            recordTurn(current.conversation.id, { ...current.turn, status: 'FAILED' })
+          if (current.turn) recordRealtimeTurn(current, { ...current.turn, status: 'FAILED' })
           markIssue(current.conversation.id, 'Agent 已离线，无法继续回复')
         }
         scheduleRefresh(current.conversation.projectId)
@@ -472,8 +481,8 @@ export const useNavigationStore = defineStore('navigation', () => {
     }
     const turnId = payload?.turnId
     if (event.type === 'MESSAGE_UPDATED') {
-      if (turnId != null)
-        recordTurn(current.conversation.id, { id: Number(turnId), status: 'RUNNING' })
+      if (turnId != null && recordRealtimeTurn(current, { id: Number(turnId), status: 'RUNNING' }))
+        scheduleRefresh(current.conversation.projectId)
       return
     }
     if (turnId != null) {
@@ -484,17 +493,18 @@ export const useNavigationStore = defineStore('navigation', () => {
           : event.type === 'APPROVAL_REQUIRED'
             ? 'WAITING_APPROVAL'
             : null)
-      if (status) recordTurn(current.conversation.id, { id: Number(turnId), status })
+      if (status) recordRealtimeTurn(current, { id: Number(turnId), status })
       if (event.type === 'TURN_FAILED' && sameId(current.turn?.id, turnId))
         current.failureMessage = payload?.reason || payload?.message || 'Agent 执行失败'
     }
     if (event.type === 'ERROR') {
       current.failureMessage = payload?.message || 'Agent 执行失败'
       if (payload?.commandType === 'START_TURN' && current.turn)
-        recordTurn(current.conversation.id, { ...current.turn, status: 'FAILED' })
-      else {
+        recordRealtimeTurn(current, { ...current.turn, status: 'FAILED' })
+      else if (current.conversation.status !== 'FAILED') {
         current.conversation = { ...current.conversation, status: 'FAILED' }
         current.revision = ++revision
+        useProjectStore().promoteProject(current.conversation.projectId)
       }
     }
     if (
