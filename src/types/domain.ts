@@ -195,16 +195,6 @@ export interface ConversationAttachment {
   sizeBytes: number
   sha256: string
 }
-export interface ConversationArtifact {
-  id: Id
-  turnId: Id
-  fileName: string
-  mediaType: string
-  sizeBytes: number
-  sha256: string
-  status: 'UPLOADING' | 'READY' | 'FAILED'
-  errorMessage: string | null
-}
 export interface AttachmentLimits {
   maxFileBytes: number
   maxFiles: number

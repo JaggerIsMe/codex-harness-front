@@ -1,4 +1,4 @@
-import { request, downloadFile } from './request'
+import { request } from './request'
 import type { AttachmentLimits, ConversationAttachment, Id } from '@/types/domain'
 const base = (pid: Id, cid: Id) => `/projects/${pid}/conversations/${cid}/attachments`
 export function getAttachmentLimits(pid: Id, cid: Id, signal?: AbortSignal) {
@@ -25,7 +25,4 @@ export function uploadAttachment(
 }
 export function removeAttachment(pid: Id, cid: Id, aid: Id, signal?: AbortSignal) {
   return request<void>('delete', `${base(pid, cid)}/${aid}`, undefined, { signal })
-}
-export function downloadAttachment(pid: Id, cid: Id, aid: Id, signal?: AbortSignal) {
-  return downloadFile(`${base(pid, cid)}/${aid}/download`, signal)
 }

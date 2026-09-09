@@ -66,8 +66,8 @@ const form = reactive({ expertId: '', title: '' })
 const rules: FormRules = {}
 
 watch(
-  () => props.modelValue,
-  async (visible, _, onCleanup) => {
+  () => [props.modelValue, props.projectId] as const,
+  async ([visible], _, onCleanup) => {
     if (!visible) return
     Object.assign(form, { expertId: '', title: '' })
     const controller = new AbortController()
@@ -87,6 +87,7 @@ watch(
       if (!controller.signal.aborted) loadingExperts.value = false
     }
   },
+  { immediate: true },
 )
 
 async function submit() {

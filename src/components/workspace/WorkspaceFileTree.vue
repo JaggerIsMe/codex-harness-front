@@ -3,7 +3,9 @@
     <li v-for="file in directory?.entries || []" :key="file.path">
       <div
         class="workspace-file-row"
-        :class="{ 'workspace-file-row--selected': selected === file.path }"
+        :class="{
+          'workspace-file-row--selected': selected === file.path || previewPath === file.path,
+        }"
       >
         <button
           v-if="file.type === 'DIRECTORY'"
@@ -18,6 +20,18 @@
             :size="14"
           />
           <Folder :size="16" /><span>{{ file.name }}</span>
+        </button>
+        <button
+          v-else-if="file.type === 'FILE'"
+          type="button"
+          class="workspace-file-label"
+          :title="file.path"
+          :aria-label="`预览 ${file.name}`"
+          :aria-pressed="previewPath === file.path"
+          :disabled="disabled"
+          @click="emit('preview', file)"
+        >
+          <File :size="16" /><span>{{ file.name }}</span>
         </button>
         <span v-else class="workspace-file-label" :title="file.path">
           <File :size="16" /><span>{{ file.name }}</span>
@@ -50,8 +64,10 @@
         :directories="directories"
         :expanded="expanded"
         :selected="selected"
+        :preview-path="previewPath"
         :disabled="disabled"
         @toggle="emit('toggle', $event)"
+        @preview="emit('preview', $event)"
         @download="emit('download', $event)"
         @copy="emit('copy', $event)"
         @more="(directoryPath, cursor) => emit('more', directoryPath, cursor)"
@@ -94,11 +110,13 @@ const props = defineProps<{
   path: string
   directories: Record<string, WorkspaceDirectoryState>
   expanded: string[]
+  previewPath?: string
   selected: string
   disabled: boolean
 }>()
 const emit = defineEmits<{
   toggle: [path: string]
+  preview: [file: WorkspaceFileEntry]
   download: [file: WorkspaceFileEntry]
   copy: [path: string]
   more: [path: string, cursor: string]

@@ -4,7 +4,8 @@
       <button
         type="button"
         class="max-w-full break-all text-left text-sm underline focus-visible:outline-2"
-        :disabled="busy !== null"
+        :disabled="busy !== null || !attachment.workspacePath"
+        title="下载工作区中的当前文件，需要设备在线"
         @click="download(attachment)"
       >
         {{ attachment.fileName }} · {{ (attachment.sizeBytes / 1024).toFixed(1) }} KB
@@ -12,30 +13,39 @@
       </button>
     </li>
   </ul>
+  <p v-if="error" role="alert" class="mt-1 text-sm text-destructive">{{ error }}</p>
 </template>
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue'
-import { downloadAttachment } from '@/api/attachment'
+import {
+  prepareWorkspaceDownload,
+  waitWorkspaceOperation,
+  downloadWorkspaceContent,
+} from '@/api/workspace-file'
 import type { ConversationAttachment, Id } from '@/types/domain'
 const props = defineProps<{
   attachments?: ConversationAttachment[]
   projectId: Id
-  conversationId: Id
 }>()
 const busy = ref<Id | null>(null)
+const error = ref('')
 const controller = new AbortController()
 const urls = new Set<string>()
 const timers = new Set<ReturnType<typeof setTimeout>>()
 async function download(attachment: ConversationAttachment) {
+  if (busy.value !== null || !attachment.workspacePath) return
   busy.value = attachment.id
+  error.value = ''
   try {
-    const blob = await downloadAttachment(
+    const { data } = await prepareWorkspaceDownload(
       props.projectId,
-      props.conversationId,
-      attachment.id,
+      attachment.workspacePath,
+      crypto.randomUUID(),
       controller.signal,
     )
+    await waitWorkspaceOperation(props.projectId, data.id, controller.signal)
+    const blob = await downloadWorkspaceContent(props.projectId, data.id, controller.signal)
     if (controller.signal.aborted) return
     const url = URL.createObjectURL(blob)
     urls.add(url)
@@ -51,8 +61,9 @@ async function download(attachment: ConversationAttachment) {
       timers.delete(timer)
     }, 1000)
     timers.add(timer)
-  } catch {
-    /* Shared request error handling. */
+  } catch (cause) {
+    if (!controller.signal.aborted)
+      error.value = cause instanceof Error ? cause.message : '工作区文件下载失败'
   } finally {
     busy.value = null
   }

@@ -295,7 +295,7 @@ test('project expert button signals and directly applies an available upgrade', 
   expect(errors).toEqual([])
 })
 
-test('expert administration keeps MCP and knowledge as unavailable extension sections', async ({
+test('expert administration shows empty MCP choices and the reserved knowledge section', async ({
   page,
 }) => {
   await fixtures(page)
@@ -310,7 +310,10 @@ test('expert administration keeps MCP and knowledge as unavailable extension sec
   await page.goto('/experts')
   await page.getByRole('button', { name: '创建专家' }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByText('暂未接入，后续拓展')).toHaveCount(2)
+  await expect(dialog.getByRole('group', { name: 'MCP（绑定固定配置版本）' })).toContainText(
+    '暂无可用 MCP 配置',
+  )
+  await expect(dialog.getByRole('group', { name: '知识库' })).toContainText('暂未接入，后续拓展')
   await dialog.getByLabel('名称', { exact: true }).fill('Java 专家')
   await dialog.getByLabel('系统提示词', { exact: true }).fill('负责 Java 开发')
   await dialog.getByRole('button', { name: '保存草稿' }).click()
@@ -386,12 +389,14 @@ for (const action of [
 
 test('expert publish records the compatible upgrade decision', async ({ page }) => {
   const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
   const expert = {
     id: 10,
     name: 'Java 专家',
     description: 'Java 开发',
     status: 'PUBLISHED',
     revision: 7,
+    publishedVersionId: 100,
   }
   let request: Record<string, unknown> | undefined
   await page.route('**/api/v1/admin/experts**', async (route) => {
@@ -475,70 +480,6 @@ test('logical Message streaming deduplicates updates and survives page reload', 
   await expect(page.locator('.agent-answer .message-markdown')).toHaveCount(1)
   await expect(page.locator('.agent-answer .message-markdown')).toHaveText('你好，完整回答')
   expect(errors).toEqual([])
-})
-
-test('Conversation artifacts recover on reload, retry publication, and download original filenames', async ({
-  page,
-}) => {
-  const errors = await fixtures(page)
-  let socket: WebSocketRoute | undefined
-  let status = 'UPLOADING'
-  let retryCount = 0
-  let startedTurns = 0
-  const artifact = () => ({
-    id: '91',
-    turnId: '7',
-    fileName: '项目分析报告.txt',
-    mediaType: 'application/octet-stream',
-    sizeBytes: 8,
-    sha256: 'a'.repeat(64),
-    status,
-    errorMessage: status === 'FAILED' ? '上传失败，请重试' : null,
-  })
-  const response = (data: unknown) => ({ status: 'success', code: 200, info: '请求成功', data })
-  page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url().endsWith('/turns')) startedTurns++
-  })
-  await page.route('**/artifacts', (route) => route.fulfill({ json: response([artifact()]) }))
-  await page.route('**/artifacts/91/retry', (route) => {
-    retryCount++
-    status = 'READY'
-    return route.fulfill({ json: response(artifact()) })
-  })
-  await page.route('**/artifacts/91/download', (route) =>
-    route.fulfill({
-      contentType: 'application/octet-stream',
-      body: 'original',
-    }),
-  )
-  await page.routeWebSocket('**/ws/client?*', (connected) => {
-    socket = connected
-  })
-  await page.goto('/projects/3?id=4')
-  await expect(page.getByRole('list', { name: '交付文件' })).toContainText('正在准备下载')
-  await expect.poll(() => Boolean(socket)).toBe(true)
-  status = 'FAILED'
-  socket!.send(
-    JSON.stringify({ type: 'ARTIFACT_CHANGED', payload: { conversationId: '4', turnId: '7' } }),
-  )
-  await expect(page.getByRole('button', { name: '重试上传' })).toBeVisible()
-  await page.getByRole('button', { name: '重试上传' }).click()
-  await expect(page.getByRole('list', { name: '交付文件' })).toContainText('项目分析报告.txt')
-  await expect(page.getByRole('button', { name: '下载', exact: true })).toBeVisible()
-  await page.reload()
-  await expect(page.getByRole('list', { name: '交付文件' })).toHaveCount(1)
-  const pending = page.waitForEvent('download')
-  await page.getByRole('button', { name: '下载', exact: true }).click()
-  const download = await pending
-  expect(download.suggestedFilename()).toBe('项目分析报告.txt')
-  const stream = await download.createReadStream()
-  const chunks: Buffer[] = []
-  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
-  expect(Buffer.concat(chunks).toString()).toBe('original')
-  expect(retryCount).toBe(1)
-  expect(startedTurns).toBe(0)
-  expect(errors).toEqual([])
-  await page.screenshot({ path: 'test-results/conversation-artifacts.png', fullPage: true })
 })
 
 async function fixtures(page: Page, authenticated = true) {
@@ -881,11 +822,318 @@ test('conversation uploads and sends an attachment-only message and restores its
   await expect(page.getByRole('button', { name: /requirements.txt ·/ })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: /requirements.txt ·/ })).toBeVisible()
-  await page.route('**/attachments/90/download', (route) =>
-    route.fulfill({ contentType: 'application/octet-stream', body: 'hello' }),
+  const downloadOperation = {
+    id: '101',
+    kind: 'PREPARE_WORKSPACE_DOWNLOAD',
+    path: 'requirements.txt',
+    status: 'SUCCEEDED',
+    error: null,
+  }
+  await page.route('**/workspace-files/downloads', (route) => {
+    expect(route.request().postDataJSON().path).toBe('requirements.txt')
+    return route.fulfill({ json: response(downloadOperation) })
+  })
+  await page.route('**/workspace-files/operations/101', (route) =>
+    route.fulfill({ json: response(downloadOperation) }),
+  )
+  await page.route('**/workspace-files/operations/101/content', (route) =>
+    route.fulfill({ contentType: 'application/octet-stream', body: 'current workspace contents' }),
   )
   const downloaded = page.waitForEvent('download')
   await page.getByRole('button', { name: /requirements.txt ·/ }).click()
-  expect((await downloaded).suggestedFilename()).toBe('requirements.txt')
+  const download = await downloaded
+  expect(download.suggestedFilename()).toBe('requirements.txt')
+  const stream = await download.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
+  expect(Buffer.concat(chunks).toString()).toBe('current workspace contents')
+  expect(errors).toEqual([])
+})
+
+function previewPdfFixture() {
+  const stream = (label: string) =>
+    `0.1 0.3 0.7 rg 30 100 180 60 re f BT /F1 20 Tf 30 200 Td (${label}) Tj ET`
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 7 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${stream('First page').length} >>\nstream\n${stream('First page')}\nendstream`,
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 7 0 R >> >> /Contents 6 0 R >>',
+    `<< /Length ${stream('Second page').length} >>\nstream\n${stream('Second page')}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ]
+  let pdf = '%PDF-1.7\n'
+  const offsets = [0]
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+  const xref = pdf.length
+  pdf += `xref\n0 8\n0000000000 65535 f \n${offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n `)
+    .join('\n')}\ntrailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  return Buffer.from(pdf)
+}
+async function previewFixtures(page: Page) {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  await page.route('**/active-turn', (route) => route.fulfill({ json: response(null) }))
+  const files: Record<string, Buffer> = {
+    'note.txt': Buffer.from('Original snapshot\n中文文件'),
+    'README.md': Buffer.from(
+      '# Workspace report\n\n| Name | Value |\n| --- | --- |\n| alpha | 42 |\n\n![secret](https://preview-external.invalid/image)\n\n<script>window.previewUnsafe=true</script>\n\n[example](https://example.com)',
+    ),
+    'table.csv': Buffer.from(
+      'name,note\n"one,two","first\nsecond"\n"quoted \"\"text\"\"",=SUM(A1)',
+    ),
+    'picture.png': Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+      'base64',
+    ),
+    'document.pdf': previewPdfFixture(),
+    'broken.pdf': Buffer.from('%PDF-broken'),
+    'office.docx': Buffer.from('unsupported'),
+    'empty.txt': Buffer.from(''),
+  }
+  const operations: Record<
+    string,
+    { id: string; kind: string; status: string; path: string; error: null; content: Buffer }
+  > = {}
+  const reads: string[] = []
+  let sequence = 0,
+    generation = 1
+  await page.route('**/workspace-files**', async (route) => {
+    expect(route.request().headers()['authorization']).toBe('Bearer test-token')
+    const url = new URL(route.request().url()),
+      endpoint = url.pathname.split('/workspace-files')[1] || ''
+    if (!endpoint)
+      return route.fulfill({
+        json: response({
+          path: '',
+          generation: String(generation),
+          scannedAt: Date.now(),
+          entries: Object.entries(files).map(([path, content]) => ({
+            path,
+            name: path,
+            type: 'FILE',
+            sizeBytes: content.length,
+            modifiedAt: generation,
+          })),
+          nextCursor: null,
+          loaded: true,
+          online: true,
+          supported: true,
+          operation: null,
+          maxFileBytes: 20971520,
+        }),
+      })
+    if (endpoint === '/downloads') {
+      const path = route.request().postDataJSON().path as string
+      const id = String(++sequence)
+      operations[id] = {
+        id,
+        kind: 'PREPARE_WORKSPACE_DOWNLOAD',
+        path,
+        status: 'SUCCEEDED',
+        error: null,
+        content: Buffer.from(files[path]),
+      }
+      return route.fulfill({ json: response(operations[id]) })
+    }
+    const id = endpoint.split('/')[2],
+      op = operations[id]
+    if (endpoint.endsWith('/content')) {
+      reads.push(id)
+      return route.fulfill({ contentType: 'application/octet-stream', body: op.content })
+    }
+    if (endpoint.endsWith('/preview')) {
+      const kind = op.path.endsWith('.md')
+        ? 'MARKDOWN'
+        : op.path.endsWith('.csv')
+          ? 'TABLE'
+          : op.path.endsWith('.png')
+            ? 'IMAGE'
+            : op.path.endsWith('.pdf')
+              ? 'PDF'
+              : op.path.endsWith('.docx')
+                ? 'UNSUPPORTED'
+                : 'TEXT'
+      return route.fulfill({
+        json: response({
+          operationId: id,
+          path: op.path,
+          fileName: op.path,
+          kind,
+          mediaType:
+            kind === 'IMAGE' ? 'image/png' : kind === 'PDF' ? 'application/pdf' : 'text/plain',
+          encoding: 'utf-8',
+          sizeBytes: op.content.length,
+          sha256: 'a'.repeat(64),
+          readyAt: '2026-09-08T10:00:00',
+          width: 1,
+          height: 1,
+          reason: kind === 'UNSUPPORTED' ? '暂不支持此文件格式，请下载查看。' : null,
+          limits: {
+            maxBytes: 20971520,
+            maxLines: 20000,
+            maxRows: 1000,
+            maxColumns: 100,
+            maxPixels: 4000000,
+          },
+        }),
+      })
+    }
+    return route.fulfill({ json: response(op) })
+  })
+  await page.goto('/projects/3?id=4')
+  await page.getByRole('button', { name: '工作区文件', exact: true }).click()
+  return {
+    errors,
+    reads,
+    change: () => {
+      files['note.txt'] = Buffer.from('New workspace contents')
+      generation++
+    },
+  }
+}
+
+test('workspace preview keeps the conversation mounted, isolates content and downloads its snapshot', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1900, height: 1000 })
+  const { errors, reads, change } = await previewFixtures(page)
+  const external: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('preview-external.invalid')) external.push(request.url())
+  })
+  const tree = page.getByRole('complementary', { name: '工作区文件' })
+  const preview = page.getByRole('complementary', { name: '文件预览', exact: true })
+  const draft = page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')
+  await draft.fill('保留这条草稿')
+  await draft.evaluate((element) => element.setAttribute('data-original-composer', 'true'))
+  await tree.getByRole('button', { name: '预览 note.txt', exact: true }).click()
+  await expect(preview).toContainText('Original snapshot')
+  await expect(page.locator('.workspace-workbench')).toHaveAttribute('data-mode', 'three')
+  const separators = page.getByRole('separator')
+  await expect(separators).toHaveCount(2)
+  const chatWidth = await page
+    .locator('[data-pane="chat"]')
+    .evaluate((element) => element.clientWidth)
+  await separators.first().focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  expect(
+    await page.locator('[data-pane="chat"]').evaluate((element) => element.clientWidth),
+  ).toBeGreaterThan(chatWidth)
+  const treeWidth = await tree.evaluate((element) => element.clientWidth)
+  const handle = (await separators.nth(1).boundingBox())!
+  await page.mouse.move(handle.x + 3, handle.y + 50)
+  await page.mouse.down()
+  await page.mouse.move(handle.x - 27, handle.y + 50)
+  await page.mouse.up()
+  expect(await tree.evaluate((element) => element.clientWidth)).toBeGreaterThan(treeWidth)
+  change()
+  await tree.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(preview).toContainText('目录已更新')
+  const pending = page.waitForEvent('download')
+  await preview.getByRole('button', { name: '下载副本' }).click()
+  const download = await pending
+  const { readFile } = await import('node:fs/promises')
+  expect(await readFile((await download.path())!, 'utf8')).toBe('Original snapshot\n中文文件')
+  expect(reads).toEqual(['1', '1'])
+  await tree.getByRole('button', { name: '预览 README.md' }).click()
+  await expect(preview.getByRole('heading', { name: 'Workspace report' })).toBeVisible()
+  await expect(preview.getByRole('cell', { name: '42' })).toBeVisible()
+  expect(await preview.locator('img,script,iframe').count()).toBe(0)
+  expect(external).toEqual([])
+  await preview.getByRole('button', { name: '查看源码' }).click()
+  await expect(preview.locator('.file-text-preview__text')).toContainText('# Workspace report')
+  await tree.getByRole('button', { name: '预览 table.csv' }).click()
+  await expect(preview.getByRole('cell', { name: 'one,two', exact: true })).toBeVisible()
+  await expect(preview.getByRole('cell', { name: 'first second' })).toBeVisible()
+  await tree.getByRole('button', { name: '预览 picture.png' }).click()
+  await expect(preview.getByRole('img')).toBeVisible()
+  await expect
+    .poll(() => preview.getByRole('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBe(1)
+  await tree.getByRole('button', { name: '预览 README.md' }).click()
+  await expect(preview.getByRole('heading', { name: 'Workspace report' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('preview-three-columns.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.locator('.workspace-workbench')).toHaveAttribute('data-mode', 'single')
+  await page
+    .getByRole('navigation', { name: '工作区视图' })
+    .getByRole('button', { name: '会话', exact: true })
+    .click()
+  await expect(draft).toHaveValue('保留这条草稿')
+  await expect(draft).toHaveAttribute('data-original-composer', 'true')
+  await page
+    .getByRole('navigation', { name: '工作区视图' })
+    .getByRole('button', { name: '预览', exact: true })
+    .click()
+  await expect(preview.getByRole('heading', { name: 'Workspace report' })).toBeVisible()
+  expect(
+    await page.locator('body').evaluate((element) => element.scrollWidth <= window.innerWidth),
+  ).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('preview-mobile.png'), fullPage: true })
+  await preview.getByRole('button', { name: '关闭文件预览' }).click()
+  await expect(draft).toBeVisible()
+  await expect(page.getByRole('button', { name: '工作区文件', exact: true })).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('workspace PDF preview renders locally, preserves pages across layout and releases its worker', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1900, height: 1000 })
+  const { errors } = await previewFixtures(page)
+  const tree = page.getByRole('complementary', { name: '工作区文件' })
+  const preview = page.getByRole('complementary', { name: '文件预览', exact: true })
+  await tree.getByRole('button', { name: '预览 document.pdf' }).click()
+  const rendered = async () => {
+    await expect(preview.getByText('正在渲染 PDF…', { exact: true })).toBeHidden()
+    await expect
+      .poll(() =>
+        preview
+          .locator('canvas')
+          .evaluate((canvas: HTMLCanvasElement) => canvas.width * canvas.height),
+      )
+      .toBeGreaterThan(0)
+  }
+  await expect(preview.getByRole('spinbutton', { name: 'PDF 页码' })).toBeEnabled()
+  await rendered()
+  await preview.getByRole('button', { name: '下一页' }).click()
+  await expect(preview.getByRole('spinbutton')).toHaveValue('2')
+  await rendered()
+  expect(
+    await preview
+      .locator('canvas')
+      .evaluate((canvas: HTMLCanvasElement) => canvas.width * canvas.height),
+  ).toBeLessThanOrEqual(4000000)
+  await preview.getByRole('button', { name: '最大化预览' }).click()
+  await page.setViewportSize({ width: 1400, height: 844 })
+  await preview.getByRole('button', { name: '恢复布局' }).click()
+  await expect(preview.getByRole('spinbutton')).toHaveValue('2')
+  await rendered()
+  await page.screenshot({ path: testInfo.outputPath('preview-pdf.png'), fullPage: true })
+  await page
+    .getByRole('navigation', { name: '工作区视图' })
+    .getByRole('button', { name: '文件', exact: true })
+    .click()
+  await page
+    .getByRole('navigation', { name: '工作区视图' })
+    .getByRole('button', { name: '预览', exact: true })
+    .click()
+  await expect(preview.getByRole('spinbutton')).toHaveValue('2')
+  await rendered()
+  await preview.getByRole('button', { name: '关闭文件预览' }).click()
+  await expect.poll(() => page.workers().length).toBe(0)
+  await page.setViewportSize({ width: 1900, height: 1000 })
+  await tree.getByRole('button', { name: '预览 broken.pdf' }).click()
+  await expect(preview.getByRole('alert')).toContainText('PDF 文件损坏或无法读取')
+  await tree.getByRole('button', { name: '预览 office.docx' }).click()
+  await expect(preview).toContainText('暂不支持此文件格式')
+  await tree.getByRole('button', { name: '预览 empty.txt' }).click()
+  await expect(preview).toContainText('空文件')
   expect(errors).toEqual([])
 })

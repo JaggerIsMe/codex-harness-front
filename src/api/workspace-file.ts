@@ -1,6 +1,7 @@
 import { request, downloadFile } from './request'
 import type { Id } from '@/types/domain'
 import type { WorkspaceDirectory, WorkspaceFileOperation } from '@/types/workspace-file'
+import type { WorkspaceFilePreview } from '@/types/workspace-preview'
 
 const base = (pid: Id) => `/projects/${pid}/workspace-files`
 export function getWorkspaceDirectory(
@@ -66,6 +67,11 @@ export function prepareWorkspaceDownload(
 }
 export function downloadWorkspaceContent(pid: Id, id: Id, signal: AbortSignal) {
   return downloadFile(`${base(pid)}/operations/${id}/content`, signal)
+}
+export function getWorkspacePreview(pid: Id, id: Id, signal: AbortSignal) {
+  return request<WorkspaceFilePreview>('get', `${base(pid)}/operations/${id}/preview`, undefined, {
+    signal,
+  })
 }
 function delay(signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {

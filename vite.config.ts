@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
+import { pdfAssets } from './pdf-assets'
 
 export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  plugins: [vue()],
+  plugins: [vue(), pdfAssets()],
   server: {
     host: '0.0.0.0',
     port: 8010,

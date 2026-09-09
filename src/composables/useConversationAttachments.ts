@@ -60,6 +60,8 @@ export function useConversationAttachments(pid: Id, cid: Id) {
     if (!existing) uploads.set(row.key, controller)
     try {
       const id = row.attachment?.workspaceOperationId
+      if ((row.file || row.attachment?.workspacePath) && (!id || !row.attachment?.workspacePath))
+        throw new Error('附件缺少工作区上传记录，请移除后重新上传')
       if (id) await waitWorkspaceOperation(pid, id, controller.signal)
       if (disposed || controller.signal.aborted) return
       row.progress = 100
@@ -131,6 +133,7 @@ export function useConversationAttachments(pid: Id, cid: Id) {
     }
   }
   async function remove(row: AttachmentDraft) {
+    const wasReady = row.status === 'ready'
     uploads.get(row.key)?.abort()
     if (row.attachment) {
       row.status = 'removing'
@@ -138,7 +141,8 @@ export function useConversationAttachments(pid: Id, cid: Id) {
         await removeAttachment(pid, cid, row.attachment.id, lifetime.signal)
       } catch (cause) {
         if (!disposed) {
-          row.status = 'ready'
+          row.status = wasReady ? 'ready' : 'error'
+          row.error = '移除失败，请检查工作区上传状态后重试'
           error.value = cause instanceof Error ? cause.message : '移除失败'
         }
         return

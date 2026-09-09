@@ -52,9 +52,11 @@
         :directories="directories"
         :expanded="expanded"
         :selected="selected"
+        :preview-path="previewPath"
         :disabled="!root.online || busy"
         @toggle="toggle"
         @download="download"
+        @preview="emit('preview', $event)"
         @copy="copy"
         @more="(path, cursor) => load(path, true, cursor)"
         @retry="(path) => load(path, true)"
@@ -80,13 +82,14 @@
 import { ref } from 'vue'
 import { FolderRoot, PanelRightClose } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import type { WorkspaceFileEntry } from '@/types/workspace-file'
 import type { Id } from '@/types/domain'
 import AppButton from '@/components/common/AppButton.vue'
 import WorkspaceFileTree from './WorkspaceFileTree.vue'
 import CreateWorkspaceDirectoryDialog from './CreateWorkspaceDirectoryDialog.vue'
 import { useWorkspaceFiles } from '@/composables/useWorkspaceFiles'
-const props = defineProps<{ projectId: Id }>()
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ projectId: Id; previewPath?: string }>()
+const emit = defineEmits<{ close: []; preview: [file: WorkspaceFileEntry] }>()
 const {
   root,
   directories,
