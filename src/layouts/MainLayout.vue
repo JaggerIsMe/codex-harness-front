@@ -73,24 +73,22 @@
         </button>
       </div>
       <footer class="sidebar-footer">
-        <div v-if="!collapsed || mobileOpen" class="sidebar-connection">
-          <span :class="['connection-dot', agentStore.connectionState.toLowerCase()]" />{{
-            connectionLabel
-          }}
-        </div>
         <div class="sidebar-account">
-          <span v-if="!collapsed || mobileOpen" class="truncate">{{
+          <span v-if="!collapsed || mobileOpen" class="min-w-0 flex-1 truncate">{{
             authStore.user?.displayName || authStore.user?.username || '用户'
-          }}</span
-          ><button
-            type="button"
-            class="sidebar-icon"
-            aria-label="退出登录"
-            title="退出登录"
-            @click="signOut"
-          >
-            <LogOut class="size-4" />
-          </button>
+          }}</span>
+          <div class="sidebar-account-actions">
+            <ThemeToggle :compact="collapsed && !mobileOpen" />
+            <button
+              type="button"
+              class="sidebar-icon"
+              aria-label="退出登录"
+              title="退出登录"
+              @click="signOut"
+            >
+              <LogOut class="size-4" />
+            </button>
+          </div>
         </div>
       </footer>
     </aside>
@@ -135,6 +133,7 @@ import { useProjectStore } from '@/stores/project'
 import { useNavigationStore } from '@/stores/navigation'
 import { useConversationStore } from '@/stores/conversation'
 import WorkspaceNavigation from '@/components/navigation/WorkspaceNavigation.vue'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 import CreateProjectDialog from '@/components/project/CreateProjectDialog.vue'
 import CreateConversationDialog from '@/components/conversation/CreateConversationDialog.vue'
 import type { Project, Conversation } from '@/types/domain'
@@ -167,12 +166,6 @@ const menuItems = computed(() =>
     { path: '/account/password', label: '修改密码', icon: KeyRound, permission: '' },
   ].filter((item) => !item.permission || authStore.can(item.permission)),
 )
-const connectionLabel = computed(
-  () =>
-    ({ CONNECTED: '已连接', CONNECTING: '正在连接…', DISCONNECTED: '连接已断开' })[
-      agentStore.connectionState
-    ],
-)
 function closeMobile() {
   mobileOpen.value = false
   void nextTick(() => mobileTrigger.value?.focus())
@@ -191,6 +184,7 @@ async function projectCreated(project: Project) {
 }
 async function conversationCreated(value: Conversation) {
   navigation.upsert(value)
+  navigation.expanded[value.projectId] = true
   await router.push({
     name: 'project-detail',
     params: { projectId: value.projectId },
@@ -218,6 +212,7 @@ watch(mobileOpen, async (open) => {
 })
 onMounted(async () => {
   if (authStore.can('workspace:use')) {
+    navigation.startListening(authStore.user?.id ?? null)
     void agentStore.connect()
     await projectStore.loadProjects()
   }

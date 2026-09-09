@@ -10,8 +10,11 @@ import type {
 } from '@/types/domain'
 import { createDeltaBuffer } from '../utils/deltaBuffer'
 import { applyMessagePatches } from '../utils/messageStream'
+import { canAdvanceTurn, TERMINAL_TURN_STATUSES } from '@/utils/conversationActivity'
 import { computed, ref, watch, onScopeDispose } from 'vue'
 import { defineStore } from 'pinia'
+import { normalizePageResult } from '@/utils/pagination'
+import { isCancel } from 'axios'
 import {
   getActiveTurn,
   getConversation,
@@ -23,6 +26,7 @@ import {
   startTurn,
 } from '../api/conversation.ts'
 import { useAgentStore } from './agent.ts'
+import { useNavigationStore } from './navigation'
 const ACTIVE_TURN_STATUSES = ['CREATED', 'RUNNING', 'WAITING_APPROVAL']
 const TERMINAL_EVENT_STATUSES: Record<string, string> = {
   TURN_COMPLETED: 'COMPLETED',
@@ -30,8 +34,16 @@ const TERMINAL_EVENT_STATUSES: Record<string, string> = {
   TURN_INTERRUPTED: 'INTERRUPTED',
 }
 
+function isAborted(error: unknown) {
+  return (
+    isCancel(error) ||
+    ((error instanceof Error || error instanceof DOMException) && error.name === 'AbortError')
+  )
+}
+
 export const useConversationStore = defineStore('conversation', () => {
   const agentStore = useAgentStore()
+  const navigation = useNavigationStore()
   const conversations = ref<Conversation[]>([])
   const currentConversation = ref<Conversation | null>(null)
   const messages = ref<Message[]>([])
@@ -61,6 +73,7 @@ export const useConversationStore = defineStore('conversation', () => {
   let realtimeStop: (() => void) | null = null
   const listError = ref('')
   const detailError = ref('')
+  const turnError = ref('')
   const deltaBuffer = createDeltaBuffer<RealtimeEvent>((events) => {
     let batch = messages.value
     for (const event of events) batch = appendRealtimeMessage(event, batch)
@@ -91,6 +104,7 @@ export const useConversationStore = defineStore('conversation', () => {
     approvals.value = []
     currentTurn.value = null
     detailError.value = ''
+    turnError.value = ''
     loading.value = false
   }
 
@@ -151,7 +165,7 @@ export const useConversationStore = defineStore('conversation', () => {
     conversations.value = [
       value,
       ...conversations.value.filter((item) => String(item.id) !== String(value.id)),
-    ].slice(0, 100)
+    ]
   }
 
   function activateProject(projectId: Id) {
@@ -177,7 +191,7 @@ export const useConversationStore = defineStore('conversation', () => {
     try {
       const result = await getConversations(id)
       if (id !== currentProjectId.value || revision !== listRevision) return []
-      conversations.value = result?.data || []
+      conversations.value = normalizePageResult(result.data).items
       return conversations.value
     } catch (error) {
       if (id === currentProjectId.value && revision === listRevision)
@@ -233,8 +247,52 @@ export const useConversationStore = defineStore('conversation', () => {
         ? '实时缓存暂不可用，当前显示数据库检查点，内容可能不完整。'
         : ''
       approvals.value = approvalResult?.data || []
-      currentTurn.value = turnResult?.data || null
+      const previousTurn = currentTurn.value
+      const latestConversation = currentConversation.value
+      const persistedTurn: Turn | null =
+        latestConversation?.latestTurnId != null && latestConversation.latestTurnStatus
+          ? {
+              id: Number(latestConversation.latestTurnId),
+              status: latestConversation.latestTurnStatus,
+            }
+          : null
+      const restoredTurn = turnResult?.data || persistedTurn
+      // Older servers only expose active Turns. Keep a terminal event when that endpoint returns null.
+      currentTurn.value =
+        previousTurn &&
+        ((!restoredTurn && TERMINAL_TURN_STATUSES.includes(previousTurn.status)) ||
+          (restoredTurn && !canAdvanceTurn(previousTurn, restoredTurn)))
+          ? previousTurn
+          : restoredTurn
+      if (currentTurn.value?.status === 'FAILED') {
+        if (String(currentTurn.value.id) === String(latestConversation?.latestTurnId))
+          turnError.value =
+            latestConversation?.latestTurnFailureMessage || turnError.value || 'Agent 执行失败'
+      } else if (latestConversation?.status !== 'FAILED') turnError.value = ''
       upsertConversation(currentConversation.value)
+      if (currentConversation.value) navigation.upsert(currentConversation.value)
+      if (currentTurn.value) navigation.recordTurn(id, currentTurn.value)
+      const latestTurnId =
+        currentTurn.value?.id ?? currentConversation.value?.latestTurnId ?? snapshot.turnId
+      const latestTurnStatus =
+        currentTurn.value?.status ?? currentConversation.value?.latestTurnStatus
+      const incomplete =
+        latestTurnStatus !== 'INTERRUPTED' &&
+        latestTurnId != null &&
+        snapshot.messages.some(
+          (message) =>
+            String(message.turnId) === String(latestTurnId) &&
+            message.role === 'ASSISTANT' &&
+            message.status === 'INCOMPLETE',
+        )
+      if (snapshot.degraded || incomplete)
+        navigation.markIssue(
+          id,
+          streamWarning.value || '最新回复内容不完整，请刷新重试',
+          'message',
+          latestTurnId ?? null,
+        )
+      else navigation.clearIssue(id, 'message', latestTurnId ?? null)
       restoring = false
       const frames = deferredFrames
       deferredFrames = []
@@ -243,8 +301,9 @@ export const useConversationStore = defineStore('conversation', () => {
       if (restoreOverflow) scheduleRealtimeRefresh()
       return currentConversation.value
     } catch (error) {
-      if (controller.signal.aborted || revision !== openRevision) return null
+      if (controller.signal.aborted || revision !== openRevision || isAborted(error)) return null
       detailError.value = error instanceof Error ? error.message : '会话加载失败'
+      navigation.markIssue(id, detailError.value, 'message')
       return null
     } finally {
       if (revision === openRevision) {
@@ -265,15 +324,30 @@ export const useConversationStore = defineStore('conversation', () => {
   async function startNewTurn(input: TurnInput) {
     if (!canStartTurn.value || sending.value) return null
     sending.value = true
-    const conversationId = currentConversation.value!.id
+    const conversation = currentConversation.value!
+    const conversationId = conversation.id
     const projectId = currentProjectId.value!
+    navigation.upsert(conversation)
+    navigation.clearIssue(conversationId, 'send')
+    turnError.value = ''
     try {
       const result = await startTurn(projectId, conversationId, input)
+      if (result?.data) navigation.recordTurn(conversationId, result.data)
       if (currentConversation.value?.id !== conversationId || currentProjectId.value !== projectId)
         return null
       currentTurn.value = result?.data || null
       await refreshCurrent({ silent: true }).catch(() => undefined)
       return result?.data || null
+    } catch (error) {
+      if (!isAborted(error))
+        navigation.markIssue(
+          conversationId,
+          error instanceof Error ? error.message : '消息发送失败',
+          'send',
+        )
+      if (!isAborted(error) && currentConversation.value?.id === conversationId)
+        turnError.value = error instanceof Error ? error.message : '消息发送失败'
+      throw error
     } finally {
       sending.value = false
     }
@@ -362,6 +436,7 @@ export const useConversationStore = defineStore('conversation', () => {
     if (!currentConversation.value || !hasMoreMessages.value || loadingOlder.value || restoring)
       return
     const revision = openRevision
+    const conversationId = currentConversation.value.id
     const controller = new AbortController()
     olderController = controller
     loadingOlder.value = true
@@ -381,8 +456,10 @@ export const useConversationStore = defineStore('conversation', () => {
       ].sort((a, b) => a.sequenceNo - b.sequenceNo)
       hasMoreMessages.value = result.data.hasMore
     } catch (error) {
-      if (!controller.signal.aborted && revision === openRevision)
+      if (!controller.signal.aborted && revision === openRevision && !isAborted(error)) {
         detailError.value = error instanceof Error ? error.message : '历史消息加载失败'
+        navigation.markIssue(conversationId, detailError.value, 'message')
+      }
     } finally {
       if (olderController === controller) {
         loadingOlder.value = false
@@ -421,6 +498,7 @@ export const useConversationStore = defineStore('conversation', () => {
         status: 'RUNNING',
         codexTurnId: event.payload?.codexTurnId,
       }
+      turnError.value = ''
     } else if (turnId && event.type === 'APPROVAL_REQUIRED') {
       currentTurn.value = { ...currentTurn.value, id: Number(turnId), status: 'WAITING_APPROVAL' }
     } else if (turnId && TERMINAL_EVENT_STATUSES[event.type]) {
@@ -429,8 +507,24 @@ export const useConversationStore = defineStore('conversation', () => {
         id: Number(turnId),
         status: TERMINAL_EVENT_STATUSES[event.type],
       }
+      turnError.value =
+        event.type === 'TURN_FAILED'
+          ? event.payload?.reason || event.payload?.message || 'Agent 执行失败'
+          : ''
+    } else if (event.type === 'ERROR' && event.payload?.commandType === 'START_TURN') {
+      currentTurn.value = {
+        ...currentTurn.value,
+        id: Number(event.correlationId),
+        status: 'FAILED',
+        preparationPhase: null,
+      }
+      turnError.value = event.payload.message || 'Agent 启动执行失败'
+    } else if (event.type === 'ERROR' && event.payload?.commandType === 'START_THREAD') {
+      currentConversation.value = { ...currentConversation.value!, status: 'FAILED' }
+      turnError.value = event.payload.message || 'Agent 初始化会话失败'
     } else if (event.type === 'DEVICE_OFFLINE' && isTurnActive.value && currentTurn.value) {
       currentTurn.value = { ...currentTurn.value, status: 'FAILED' }
+      turnError.value = 'Agent 已离线，无法继续回复'
     }
     scheduleRealtimeRefresh()
   }
@@ -448,6 +542,7 @@ export const useConversationStore = defineStore('conversation', () => {
     loadOlderMessages,
     streamWarning,
     detailError,
+    turnError,
     conversations,
     currentConversation,
     messages,

@@ -1,8 +1,8 @@
-$brand-primary: #212121;
-$brand-secondary: #6b7280;
-$text-primary: #262626;
-$text-secondary: #737373;
-$border-color: #e9e9e9;
-$page-background: #ffffff;
-$surface: #ffffff;
-$sidebar: #fafafa;
+$brand-primary: var(--primary);
+$brand-secondary: var(--muted-foreground);
+$text-primary: var(--foreground);
+$text-secondary: var(--muted-foreground);
+$border-color: var(--border);
+$page-background: var(--background);
+$surface: var(--card);
+$sidebar: var(--sidebar);

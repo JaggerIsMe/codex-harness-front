@@ -16,15 +16,16 @@
       </button>
     </div>
     <div v-if="open" class="workspace-navigation__content">
-      <form class="workspace-search" @submit.prevent="keyword = searchInput.trim()">
+      <form class="workspace-search" @submit.prevent="search">
         <Search class="size-3.5 shrink-0" /><input
           v-model="searchInput"
           placeholder="搜索项目或会话"
           aria-label="搜索项目或会话"
-          @input="keyword = searchInput.trim()"
+          maxlength="200"
+          @input="scheduleSearch"
         />
       </form>
-      <p v-if="projects.loading && !projects.projects.length" class="sidebar-hint" role="status">
+      <p v-if="projects.loading && !filteredProjects.length" class="sidebar-hint" role="status">
         加载项目中…
       </p>
       <div v-if="projects.error" class="sidebar-hint" role="alert">
@@ -78,7 +79,7 @@
             </button>
           </p>
           <RouterLink
-            v-for="conversation in visibleConversations(project)"
+            v-for="{ conversation, activity } in visibleConversations(project)"
             :key="conversation.id"
             class="workspace-conversation"
             :class="{
@@ -91,16 +92,56 @@
               params: { projectId: project.id },
               query: { id: conversation.id },
             }"
-            :title="conversation.title || `会话 #${conversation.id}`"
+            :aria-label="conversation.title || `会话 #${conversation.id}`"
+            :aria-describedby="`${statusId}-${conversation.id}`"
+            :title="`${conversation.title || `会话 #${conversation.id}`} · ${activity.label}`"
           >
-            <MessageSquare class="size-3.5 shrink-0" /><span>{{
-              conversation.title || `会话 #${conversation.id}`
-            }}</span>
+            <MessageSquare class="size-3.5 shrink-0" aria-hidden="true" /><span
+              class="workspace-conversation__title"
+              >{{ conversation.title || `会话 #${conversation.id}` }}</span
+            >
+            <span
+              class="workspace-conversation__activity"
+              :data-state="activity.state"
+              :title="activity.label"
+            >
+              <LoaderCircle
+                v-if="activity.state === 'running'"
+                class="workspace-conversation__spinner"
+                aria-hidden="true"
+              />
+              <span
+                v-else-if="activity.state === 'completed' || activity.state === 'error'"
+                class="workspace-conversation__dot"
+                aria-hidden="true"
+              ></span>
+              <span :id="`${statusId}-${conversation.id}`" class="sr-only">{{
+                activity.label
+              }}</span>
+            </span>
           </RouterLink>
+          <p v-if="navigation.errorsMore[project.id]" class="sidebar-hint" role="alert">
+            {{ navigation.errorsMore[project.id] }}
+            <button type="button" class="underline" @click="navigation.loadMore(project.id)">
+              重试加载更多会话
+            </button>
+          </p>
+          <button
+            v-else-if="navigation.hasMore(project.id)"
+            type="button"
+            class="workspace-conversation text-muted-foreground"
+            :disabled="navigation.loading[project.id] || navigation.loadingMore[project.id]"
+            :aria-busy="navigation.loadingMore[project.id]"
+            @click="navigation.loadMore(project.id)"
+          >
+            <LoaderCircle v-if="navigation.loadingMore[project.id]" class="size-3.5 animate-spin" />
+            <span>加载更多会话</span>
+          </button>
           <button
             v-if="
               !navigation.loading[project.id] &&
               !navigation.errors[project.id] &&
+              !keyword &&
               !navigation.conversations[project.id]?.length
             "
             type="button"
@@ -109,8 +150,37 @@
           >
             <Plus class="size-3.5" /><span>新建第一个会话</span>
           </button>
+          <p
+            v-if="
+              keyword &&
+              !navigation.loading[project.id] &&
+              !navigation.errors[project.id] &&
+              !visibleConversations(project).length
+            "
+            class="sidebar-hint"
+          >
+            未找到匹配的会话
+          </p>
         </div>
       </div>
+      <p v-if="projects.moreError" class="sidebar-hint" role="alert">
+        {{ projects.moreError }}
+        <button type="button" class="underline" @click="projects.loadMore()">
+          重试加载更多项目
+        </button>
+      </p>
+      <button
+        v-else-if="projects.hasMore"
+        type="button"
+        class="sidebar-link text-muted-foreground"
+        :disabled="projects.loading || projects.loadingMore"
+        :aria-busy="projects.loadingMore"
+        @click="projects.loadMore()"
+      >
+        <LoaderCircle v-if="projects.loadingMore" class="size-3.5 animate-spin" /><span
+          >加载更多项目</span
+        >
+      </button>
       <p
         v-if="!projects.loading && !projects.error && !filteredProjects.length"
         class="sidebar-hint"
@@ -121,11 +191,12 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ChevronDown,
   Folder,
+  LoaderCircle,
   MessageSquare,
   PanelsTopLeft,
   Plus,
@@ -142,22 +213,28 @@ const projects = useProjectStore()
 const navigation = useNavigationStore()
 const conversationStore = useConversationStore()
 const open = ref(true)
-const keyword = ref('')
-const searchInput = ref('')
-const matches = (value: string) => value.toLowerCase().includes(keyword.value.toLowerCase())
-const filteredProjects = computed(() =>
-  projects.projects.filter(
-    (project) =>
-      !keyword.value ||
-      matches(project.projectName) ||
-      navigation.conversations[project.id]?.some((item) => matches(item.title || String(item.id))),
-  ),
-)
+const keyword = computed(() => projects.keyword)
+const searchInput = ref(projects.keyword)
+const statusId = useId()
+const filteredProjects = computed(() => projects.visibleProjects)
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+function search() {
+  clearTimeout(searchTimer)
+  const query = searchInput.value.trim()
+  void projects.setKeyword(query)
+  void navigation.setKeyword(query)
+}
+function scheduleSearch() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(search, 300)
+}
+onBeforeUnmount(() => clearTimeout(searchTimer))
 function visibleConversations(project: Project) {
   const items = navigation.conversations[project.id] || []
-  return !keyword.value || matches(project.projectName)
-    ? items
-    : items.filter((item) => matches(item.title || String(item.id)))
+  return items.map((conversation) => ({
+    conversation,
+    activity: navigation.activity(conversation),
+  }))
 }
 function isExpanded(id: Id) {
   return navigation.expanded[id] !== false
@@ -167,7 +244,9 @@ function toggle(id: Id) {
 }
 watch(
   () =>
-    projects.projects.filter((item) => item.provisioningStatus === 'READY').map((item) => item.id),
+    projects.visibleProjects
+      .filter((item) => item.provisioningStatus === 'READY')
+      .map((item) => item.id),
   (ids) => {
     ids.forEach((id) => void navigation.load(id))
   },

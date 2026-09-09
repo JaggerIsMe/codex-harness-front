@@ -1,4 +1,5 @@
 import { request } from './request'
+import type { PageQuery } from '@/utils/pagination'
 import type {
   Conversation,
   Turn,
@@ -9,10 +10,23 @@ import type {
   Message,
   Decision,
   MessageState,
+  PageResult,
 } from '@/types/domain'
-export function getConversations(projectId: Id, signal?: AbortSignal) {
-  return request<Conversation[]>('get', `/projects/${projectId}/conversations`, undefined, {
+export function getConversations(projectId: Id, signal?: AbortSignal, query: PageQuery = {}) {
+  return request<PageResult<Conversation> | Conversation[]>(
+    'get',
+    `/projects/${projectId}/conversations`,
+    undefined,
+    {
+      signal,
+      params: { page: 1, size: 10, ...query },
+    },
+  )
+}
+export function getConversationStatuses(projectId: Id, ids: Id[], signal?: AbortSignal) {
+  return request<Conversation[]>('get', `/projects/${projectId}/conversations/status`, undefined, {
     signal,
+    params: { ids: ids.join(',') },
   })
 }
 export function getConversation(projectId: Id, conversationId: Id, signal?: AbortSignal) {

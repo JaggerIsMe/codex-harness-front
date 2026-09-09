@@ -4,15 +4,15 @@
   grid-template-columns: 1fr 1fr;
   min-height: 100%;
   overflow: auto;
-  background: #fff;
+  background: var(--background);
 }
 .login-intro {
   display: flex;
   align-items: center;
   padding: 64px clamp(32px, 6vw, 100px);
-  color: #262626;
-  background: #fafafa;
-  border-right: 1px solid #ededed;
+  color: var(--foreground);
+  background: var(--surface-subtle);
+  border-right: 1px solid var(--border);
 }
 .login-logo {
   display: flex;
@@ -27,12 +27,12 @@
   height: 36px;
   place-items: center;
   border-radius: 10px;
-  background: #262626;
-  color: #fff;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 .login-intro__eyebrow,
 .login-card__eyebrow {
-  color: #888;
+  color: var(--subtle-foreground);
   font-size: 11px;
   letter-spacing: 0.14em;
   margin-bottom: 18px;
@@ -45,7 +45,7 @@
 }
 .login-intro__description {
   margin-top: 24px;
-  color: #777;
+  color: var(--muted-foreground);
   font-size: 14px;
   line-height: 1.9;
 }
@@ -64,7 +64,7 @@
 }
 .login-features span {
   font-size: 11px;
-  color: #888;
+  color: var(--subtle-foreground);
 }
 .login-panel {
   display: flex;
@@ -84,7 +84,7 @@
   font-weight: 500;
 }
 .login-card__hint {
-  color: #888;
+  color: var(--subtle-foreground);
   font-size: 13px;
   margin: 12px 0 32px;
 }
@@ -95,14 +95,14 @@
 }
 .login-card__security {
   margin-top: 28px;
-  color: #999;
+  color: var(--subtle-foreground);
   font-size: 11px;
   line-height: 1.8;
   text-align: center;
 }
 .login-panel__footer {
   margin-top: 30px;
-  color: #aaa;
+  color: var(--subtle-foreground);
   font-size: 11px;
 }
 @media (max-width: 980px) {

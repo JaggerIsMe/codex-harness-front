@@ -2,8 +2,8 @@
   <Badge
     :variant="tone === 'danger' ? 'destructive' : 'secondary'"
     :class="{
-      'bg-emerald-50 text-emerald-700': tone === 'success',
-      'bg-amber-50 text-amber-700': tone === 'warning',
+      'bg-success-surface text-success': tone === 'success',
+      'bg-warning-surface text-warning': tone === 'warning',
     }"
     ><slot
   /></Badge>

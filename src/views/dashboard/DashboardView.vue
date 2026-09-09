@@ -80,7 +80,7 @@ const metrics = computed(() => [
   },
   {
     label: '隔离项目',
-    value: projectStore.projects.length,
+    value: projectStore.projectCount,
     note: '当前账号拥有的项目',
     icon: FolderOpened,
     tone: 'purple',

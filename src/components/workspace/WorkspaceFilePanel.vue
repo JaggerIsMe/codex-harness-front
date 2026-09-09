@@ -29,8 +29,8 @@
         aria-label="上传工作区文件"
         @change="choose"
       />
-      <p v-if="!root.supported" class="text-xs text-amber-700">请升级 Agent 以启用文件管理。</p>
-      <p v-else-if="!root.online && !root.loading" class="text-xs text-amber-700">
+      <p v-if="!root.supported" class="text-xs text-warning">请升级 Agent 以启用文件管理。</p>
+      <p v-else-if="!root.online && !root.loading" class="text-xs text-warning">
         Device 离线，显示上次同步结果。
       </p>
       <p v-if="operationText" role="status" class="text-xs text-muted-foreground">

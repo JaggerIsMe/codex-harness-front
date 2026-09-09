@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Route } from '@playwright/test'
 import type { WebSocketRoute } from '@playwright/test'
 
 test.afterEach(async ({ page }) => {
@@ -198,8 +198,8 @@ test('conversation keeps its creation-time expert and turn requests cannot switc
     await route.fulfill({ json: response({ id: 1000 + turns.length, status: 'COMPLETED' }) })
   })
   await page.goto('/projects/3?id=4')
-  await expect(page.locator('.composer')).toContainText('Java 开发专家')
-  await expect(page.locator('.composer')).toContainText('创建时固定，不可更改')
+  await expect(page.locator('.composer-shell')).toContainText('当前专家：Java 开发专家')
+  await expect(page.locator('.composer-shell')).not.toContainText('创建时固定，不可更改')
   for (const message of ['分析项目', '继续分析']) {
     await page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送').fill(message)
     await page.getByRole('button', { name: '发送任务', exact: true }).click()
@@ -207,9 +207,175 @@ test('conversation keeps its creation-time expert and turn requests cannot switc
   }
   expect(turns.every((turn) => !('expertId' in turn))).toBe(true)
   await page.reload()
-  await expect(page.locator('.composer')).toContainText('Java 开发专家')
+  await expect(page.locator('.composer-shell')).toContainText('当前专家：Java 开发专家')
   await expect(page.getByRole('button', { name: '选择会话专家' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('expert-conversation.png'), fullPage: true })
+  expect(errors).toEqual([])
+})
+
+test('minimal composer preserves expanded drafts and replaces send with stop', async ({
+  page,
+}, testInfo) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  let active = false
+  let sent = ''
+  let interrupts = 0
+  await page.route('**/active-turn', (route) =>
+    route.fulfill({ json: response(active ? { id: 70, status: 'RUNNING' } : null) }),
+  )
+  await page.route('**/approvals', (route) => route.fulfill({ json: response([]) }))
+  await page.route('**/conversations/4/turns', async (route) => {
+    sent = route.request().postDataJSON().message
+    active = true
+    await route.fulfill({ json: response({ id: 70, status: 'RUNNING' }) })
+  })
+  await page.route('**/turns/70/interrupt', async (route) => {
+    interrupts++
+    active = false
+    await route.fulfill({ json: response(null) })
+  })
+  await page.goto('/projects/3?id=4')
+  const composer = page.locator('.composer-shell')
+  const input = composer.getByRole('textbox')
+  const send = composer.getByRole('button', { name: '发送任务', exact: true })
+  await expect(composer).not.toContainText('模型由管理员')
+  for (const name of ['添加附件', '刷新专家状态', '发送任务']) {
+    const button = composer.getByRole('button', { name, exact: true })
+    await expect(button).toHaveText('')
+    await expect(button).toHaveCSS('border-radius', '50%')
+  }
+  await expect(send).toBeDisabled()
+  const message = '逐项检查实现并说明变更。\n'.repeat(100)
+  await input.fill(message)
+  const collapsed = (await input.boundingBox())!.height
+  await composer.getByRole('button', { name: '展开输入框' }).click()
+  await expect(input).toBeFocused()
+  await expect(composer.getByRole('button', { name: '收起输入框' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+  expect((await input.boundingBox())!.height).toBeGreaterThan(collapsed * 2)
+  await expect(input).toHaveValue(message)
+  await page.screenshot({
+    path: testInfo.outputPath('composer-expanded-light.png'),
+    fullPage: true,
+  })
+  await input.press('Escape')
+  expect((await input.boundingBox())!.height).toBe(collapsed)
+  await expect(input).toHaveValue(message)
+  await input.press('Control+Enter')
+  await expect.poll(() => sent).toBe(message.trim())
+  await expect(input).toHaveValue('')
+  await expect(send).toHaveCount(0)
+  const stop = composer.getByRole('button', { name: '停止生成' })
+  await expect(stop).toBeVisible()
+  await expect(stop).toHaveCSS('border-radius', '50%')
+  await expect(page.locator('.conversation-title [role="status"]')).toContainText('Codex 正在执行')
+  await expect(page.locator('.conversation-header__actions')).not.toContainText('Codex 正在执行')
+  await page.screenshot({ path: testInfo.outputPath('composer-running-light.png'), fullPage: true })
+  await page.getByRole('button', { name: '切换到深色主题' }).click()
+  await expect(page.locator('.composer')).toHaveCSS('background-color', 'rgb(23, 23, 23)')
+  await expect(stop).toHaveCSS('background-color', 'rgb(220, 38, 38)')
+  await expect(page.locator('.message-markdown').first()).toHaveCSS('color', 'rgb(236, 236, 236)')
+  await page.screenshot({ path: testInfo.outputPath('composer-running-dark.png'), fullPage: true })
+  await stop.click()
+  await expect.poll(() => interrupts).toBe(1)
+  await expect(stop).toHaveCount(0)
+  await expect(send).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await input.fill(message)
+  await composer.getByRole('button', { name: '展开输入框' }).click()
+  await expect(send).toBeInViewport()
+  expect(await page.locator('body').evaluate((body) => body.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({
+    path: testInfo.outputPath('composer-expanded-mobile.png'),
+    fullPage: true,
+  })
+  expect(errors).toEqual([])
+})
+
+test('expanded composer keeps actions reachable with restored attachments in short viewports', async ({
+  page,
+}, testInfo) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  await page.route('**/active-turn', (route) => route.fulfill({ json: response(null) }))
+  await page.route('**/attachments', (route) =>
+    route.fulfill({
+      json: response(
+        Array.from({ length: 5 }, (_, index) => ({
+          id: String(90 + index),
+          fileName: `requirements-${index}.txt`,
+          workspacePath: `requirements-${index}.txt`,
+          sizeBytes: 1024,
+          mediaType: 'text/plain',
+          sha256: 'a'.repeat(64),
+        })),
+      ),
+    }),
+  )
+  await page.goto('/projects/3?id=4')
+  const input = page.locator('.composer textarea')
+  const message = '请结合附件检查需求。\n'.repeat(100)
+  await input.fill(message)
+  await page.getByRole('button', { name: '展开输入框' }).click()
+  for (const viewport of [
+    { width: 900, height: 600 },
+    { width: 390, height: 700 },
+    { width: 320, height: 700 },
+  ]) {
+    await page.setViewportSize(viewport)
+    const cards = page.locator('.attachment-queue__file')
+    await expect(cards).toHaveCount(5)
+    const boxes = await cards.evaluateAll((elements) =>
+      elements.map((element) => {
+        const box = element.getBoundingClientRect()
+        return { x: box.x, y: box.y, width: box.width, right: box.right }
+      }),
+    )
+    const queueBox = (await page.locator('.attachment-queue__files').boundingBox())!
+    for (const [index, box] of boxes.entries()) {
+      expect(Math.abs(box.y - boxes[0]!.y)).toBeLessThan(1)
+      expect(Math.abs(box.width - boxes[0]!.width)).toBeLessThan(1)
+      expect(box.right).toBeLessThanOrEqual(queueBox.x + queueBox.width)
+      if (index) expect(box.x).toBeGreaterThan(boxes[index - 1]!.right)
+      await expect(
+        cards
+          .nth(index)
+          .getByRole('button', { name: `移除 requirements-${index}.txt`, exact: true }),
+      ).toBeInViewport()
+    }
+    await expect(page.getByRole('button', { name: '发送任务', exact: true })).toBeInViewport()
+    await expect(page.getByRole('button', { name: '收起输入框' })).toBeInViewport()
+    const composerBox = (await page.locator('.composer').boundingBox())!
+    expect(composerBox.y + composerBox.height).toBeLessThanOrEqual(viewport.height - 8)
+    const hintBox = (await page
+      .locator('.composer')
+      .getByText(/移除附件只取消消息关联/)
+      .boundingBox())!
+    expect(hintBox.y + hintBox.height).toBeLessThanOrEqual((await input.boundingBox())!.y)
+    expect((await input.boundingBox())!.height).toBeGreaterThanOrEqual(56)
+    await expect(input).toHaveValue(message)
+    await input.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    expect(
+      await input.evaluate(
+        (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+      ),
+    ).toBe(true)
+    expect(await page.locator('body').evaluate((body) => body.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({
+      path: testInfo.outputPath(`composer-attachments-${viewport.width}.png`),
+      fullPage: true,
+      animations: 'disabled',
+    })
+  }
+  await page.getByRole('button', { name: '移除 requirements-0.txt', exact: true }).click()
+  await expect(page.locator('.attachment-queue__file')).toHaveCount(4)
+  await expect(page.locator('.attachment-queue__placeholder')).toHaveCount(1)
+  await expect(page.locator('.attachment-queue__file').first()).toContainText('requirements-1.txt')
   expect(errors).toEqual([])
 })
 
@@ -437,7 +603,16 @@ test('logical Message streaming deduplicates updates and survives page reload', 
         code: 200,
         info: '请求成功',
         data: {
-          messages: revision ? [finalMessage] : [],
+          messages: revision
+            ? [
+                {
+                  ...finalMessage,
+                  revision,
+                  status: revision === 1 ? 'STREAMING' : 'COMPLETED',
+                  content: revision === 1 ? '你好' : finalMessage.content,
+                },
+              ]
+            : [],
           turnId: 7,
           cursor: revision,
           hasMore: false,
@@ -470,16 +645,612 @@ test('logical Message streaming deduplicates updates and survives page reload', 
         ],
       },
     })
+  revision = 1
   socket!.send(frame(1, '你好', 'STREAMING'))
   socket!.send(frame(1, '你好', 'STREAMING'))
   await expect(page.locator('.agent-answer .message-markdown')).toHaveText('你好')
+  revision = 2
   socket!.send(frame(2, '你好，完整回答', 'COMPLETED'))
   await expect(page.locator('.agent-answer .message-markdown')).toHaveText('你好，完整回答')
-  revision = 2
   await page.reload()
   await expect(page.locator('.agent-answer .message-markdown')).toHaveCount(1)
   await expect(page.locator('.agent-answer .message-markdown')).toHaveText('你好，完整回答')
   expect(errors).toEqual([])
+})
+
+test('message bottom control follows replies without interrupting history reading', async ({
+  page,
+}, testInfo) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  let socket: WebSocketRoute | undefined
+  let running = true
+  const message = {
+    id: 20,
+    turnId: 7,
+    sequenceNo: 2,
+    role: 'ASSISTANT',
+    messageType: 'TEXT',
+    messageKey: 'scroll-answer',
+    revision: 1,
+    status: 'STREAMING',
+    content: Array.from({ length: 60 }, (_, index) => `历史段落 ${index + 1}`).join('\n\n'),
+  }
+  await page.route('**/active-turn', (route) =>
+    route.fulfill({ json: response(running ? { id: 7, status: 'RUNNING' } : null) }),
+  )
+  await page.route('**/message-state?*', (route) =>
+    route.fulfill({
+      json: response({
+        messages: [message],
+        turnId: 7,
+        cursor: message.revision,
+        hasMore: false,
+        degraded: false,
+        resetRequired: false,
+        updates: [],
+      }),
+    }),
+  )
+  await page.routeWebSocket('**/ws/client?*', (connected) => {
+    socket = connected
+  })
+  await page.goto('/projects/3?id=4')
+  const panel = page.locator('.message-panel')
+  const button = page.getByRole('button', { name: '回到消息底部', exact: true })
+  const distance = () =>
+    panel.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)
+  await expect.poll(() => Boolean(socket)).toBe(true)
+  await expect.poll(distance).toBeLessThanOrEqual(1)
+  const latestMessage = page.locator('.agent-answer .message-markdown p').last()
+  const assertLatestIsUncovered = async () => {
+    const lastBox = (await latestMessage.boundingBox())!
+    const dockBox = (await page.locator('.conversation-dock').boundingBox())!
+    expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(dockBox.y)
+  }
+  await assertLatestIsUncovered()
+  const sharedPanelBox = (await panel.boundingBox())!
+  const initialComposerBox = (await page.locator('.composer').boundingBox())!
+  expect(sharedPanelBox.y + sharedPanelBox.height).toBeGreaterThan(
+    initialComposerBox.y + initialComposerBox.height,
+  )
+  await page.getByRole('button', { name: '展开输入框' }).click()
+  await expect.poll(distance).toBeLessThanOrEqual(1)
+  await assertLatestIsUncovered()
+  await page.getByRole('button', { name: '收起输入框' }).click()
+  await expect.poll(distance).toBeLessThanOrEqual(1)
+  await expect(button.locator('svg.lucide-ellipsis')).toBeVisible()
+  await expect(button).toHaveCSS('border-radius', '50%')
+  await panel.evaluate((element) => element.scrollTo({ top: 0, behavior: 'instant' }))
+  await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBe(0)
+  const append = async (text: string) => {
+    const baseRevision = message.revision++
+    message.content += `\n\n${text}`
+    socket!.send(
+      JSON.stringify({
+        type: 'MESSAGE_UPDATED',
+        payload: {
+          conversationId: 4,
+          turnId: 7,
+          cursor: message.revision,
+          patches: [{ operation: 'REPLACE', baseRevision, message }],
+        },
+      }),
+    )
+    await expect(page.locator('.agent-answer .message-markdown')).toContainText(text)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+  }
+  await append('用户阅读历史时追加的回复')
+  expect(await panel.evaluate((element) => element.scrollTop)).toBe(0)
+  const panelBox = (await panel.boundingBox())!
+  const buttonBox = (await button.boundingBox())!
+  expect(
+    Math.abs(buttonBox.x + buttonBox.width / 2 - panelBox.x - panelBox.width / 2),
+  ).toBeLessThan(1)
+  await expect(button).toBeInViewport()
+  await page.screenshot({
+    path: testInfo.outputPath('message-bottom-replying.png'),
+    fullPage: true,
+  })
+  await button.click()
+  await expect.poll(distance).toBeLessThanOrEqual(1)
+  await append('回到底部后继续自动跟随')
+  await expect.poll(distance).toBeLessThanOrEqual(1)
+  await assertLatestIsUncovered()
+  running = false
+  message.status = 'COMPLETED'
+  socket!.send(
+    JSON.stringify({ type: 'TURN_COMPLETED', payload: { conversationId: 4, turnId: 7 } }),
+  )
+  await expect(button).toHaveCount(0)
+  await panel.evaluate((element) => element.scrollTo({ top: 0, behavior: 'instant' }))
+  await expect(button.locator('svg.lucide-arrow-down')).toBeVisible()
+  await page.getByRole('button', { name: '切换到深色主题' }).click()
+  await expect(button).toHaveCSS('background-color', 'rgb(23, 23, 23)')
+  await page.setViewportSize({ width: 390, height: 700 })
+  await expect(button).toBeInViewport()
+  const mobileButton = (await button.boundingBox())!
+  expect(mobileButton.y + mobileButton.height).toBeLessThanOrEqual(
+    (await page.locator('.composer').boundingBox())!.y,
+  )
+  await page.screenshot({
+    path: testInfo.outputPath('message-bottom-mobile-dark.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
+  await button.focus()
+  await button.press('Enter')
+  await expect.poll(distance).toBeLessThanOrEqual(1)
+  await expect(button).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test.describe('Conversation message outline', () => {
+  type OutlineMessage = {
+    id: number
+    turnId: number
+    sequenceNo: number
+    role: string
+    messageType: string
+    messageKey: string
+    revision: number
+    status: string
+    content: string
+  }
+
+  async function outlineFixtures(page: Page) {
+    const errors = await fixtures(page)
+    const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+    const makeMessages = (startTurn: number, count: number): OutlineMessage[] =>
+      Array.from({ length: count }, (_, index) => {
+        const turnId = startTurn + index
+        const common = { turnId, revision: 1, status: 'COMPLETED' }
+        return [
+          {
+            ...common,
+            id: turnId * 10,
+            sequenceNo: index * 3 + 1,
+            role: 'USER',
+            messageType: 'TEXT',
+            messageKey: `outline-user-${turnId}`,
+            content: `第${index + 1}次请求：请检查项目中的第${index + 1}个模块，并说明实现和验证结果。`,
+          },
+          {
+            ...common,
+            id: turnId * 10 + 1,
+            sequenceNo: index * 3 + 2,
+            role: 'ASSISTANT',
+            messageType: 'ACTIVITY',
+            messageKey: `outline-process-${turnId}`,
+            content: JSON.stringify({
+              id: `command-${turnId}`,
+              type: 'commandExecution',
+              command: `echo module-${index + 1}`,
+              status: 'completed',
+              aggregatedOutput: '检查完成',
+            }),
+          },
+          {
+            ...common,
+            id: turnId * 10 + 2,
+            sequenceNo: index * 3 + 3,
+            role: 'ASSISTANT',
+            messageType: 'TEXT',
+            messageKey: `outline-answer-${turnId}`,
+            content: `### 第${index + 1}轮回复\n\n${Array.from(
+              { length: 8 },
+              (_, paragraph) =>
+                `检查记录 ${paragraph + 1}：模块 ${index + 1} 的页面交互、消息状态与资源释放均已逐项核对。`,
+            ).join('\n\n')}`,
+          },
+        ]
+      }).flat()
+    const messages = makeMessages(100, 16)
+    const shortMessages = makeMessages(200, 2)
+    const latest = messages.at(-1)!
+    latest.status = 'STREAMING'
+    const snapshots = [
+      {
+        ...conversation,
+        title: '长会话',
+        latestTurnId: 115,
+        latestTurnStatus: 'RUNNING',
+      },
+      {
+        ...conversation,
+        id: 5,
+        title: '短会话',
+        latestTurnId: 201,
+        latestTurnStatus: 'COMPLETED',
+      },
+    ]
+    const conversationId = (url: string) =>
+      Number(new URL(url).pathname.match(/\/conversations\/(\d+)/)?.[1])
+    await page.route(/\/api\/v1\/projects\/3\/conversations(?:\?.*)?$/, (route) =>
+      route.fulfill({ json: response(snapshots) }),
+    )
+    await page.route(/\/api\/v1\/projects\/3\/conversations\/\d+$/, (route) =>
+      route.fulfill({
+        json: response(
+          snapshots.find((snapshot) => snapshot.id === conversationId(route.request().url())),
+        ),
+      }),
+    )
+    await page.route('**/active-turn', (route) =>
+      route.fulfill({
+        json: response(
+          conversationId(route.request().url()) === 4 ? { id: 115, status: 'RUNNING' } : null,
+        ),
+      }),
+    )
+    await page.route('**/message-state?*', (route) => {
+      const longConversation = conversationId(route.request().url()) === 4
+      return route.fulfill({
+        json: response({
+          messages: longConversation ? messages : shortMessages,
+          turnId: longConversation ? 115 : 201,
+          cursor: longConversation ? latest.revision : 1,
+          hasMore: false,
+          degraded: false,
+          resetRequired: false,
+          updates: [],
+        }),
+      })
+    })
+    await page.route('**/approvals', (route) => route.fulfill({ json: response([]) }))
+    let socket: WebSocketRoute | undefined
+    await page.routeWebSocket('**/ws/client?*', (connected) => {
+      socket = connected
+    })
+    const append = async (text: string) => {
+      const baseRevision = latest.revision++
+      latest.content += `\n\n${text}`
+      await expect.poll(() => Boolean(socket)).toBe(true)
+      socket!.send(
+        JSON.stringify({
+          type: 'MESSAGE_UPDATED',
+          payload: {
+            conversationId: 4,
+            turnId: 115,
+            cursor: latest.revision,
+            patches: [{ operation: 'REPLACE', baseRevision, message: latest }],
+          },
+        }),
+      )
+      await expect(page.locator('.agent-answer').last()).toContainText(text)
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      )
+    }
+    return {
+      errors,
+      append,
+      panel: page.locator('.message-panel'),
+      outline: page.getByRole('navigation', { name: '会话消息导航' }),
+    }
+  }
+
+  test('previews each Turn and jumps to its user message without interrupting history reading', async ({
+    page,
+  }, testInfo) => {
+    const state = await outlineFixtures(page)
+    await page.goto('/projects/3?id=4')
+    const items = state.outline.getByRole('button', { name: /^跳转到/ })
+    await expect(items).toHaveCount(16)
+    await expect(page.locator('.message-row[data-message-id]')).toHaveCount(32)
+    await expect
+      .poll(() =>
+        state.panel.evaluate(
+          (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+        ),
+      )
+      .toBeLessThanOrEqual(1)
+    const beforeHover = await state.panel.evaluate((element) => element.scrollTop)
+    const targetButton = items.nth(4)
+    await targetButton.hover()
+    await expect(page.getByRole('tooltip')).toContainText('第5次请求')
+    await expect(page.getByRole('tooltip')).toContainText('第5轮回复')
+    expect(await state.panel.evaluate((element) => element.scrollTop)).toBe(beforeHover)
+    await page.screenshot({
+      path: testInfo.outputPath('conversation-outline-preview-light.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+    const buttonBox = (await targetButton.boundingBox())!
+    const previewBox = (await page.getByRole('tooltip').boundingBox())!
+    await page.mouse.move(previewBox.x + 12, buttonBox.y + buttonBox.height / 2, { steps: 12 })
+    await expect(page.getByRole('tooltip')).toContainText('第5次请求')
+    expect(await state.panel.evaluate((element) => element.scrollTop)).toBe(beforeHover)
+
+    await targetButton.click()
+    const target = page.locator('.message-row[data-message-id="user-1040"]')
+    await expect(targetButton).toHaveAttribute('aria-current', 'location')
+    await expect
+      .poll(async () => (await target.boundingBox())!.y - (await state.panel.boundingBox())!.y)
+      .toBeGreaterThanOrEqual(0)
+    expect((await target.boundingBox())!.y - (await state.panel.boundingBox())!.y).toBeLessThan(80)
+    await expect(target).toBeInViewport()
+    await state.panel.evaluate((element) => {
+      const row = element.querySelector<HTMLElement>('[data-message-id="assistant-104"]')!
+      element.scrollTop +=
+        row.getBoundingClientRect().top - element.getBoundingClientRect().top - 16
+    })
+    await expect(targetButton).toHaveAttribute('aria-current', 'location')
+    const historyPosition = await state.panel.evaluate((element) => element.scrollTop)
+    await state.append('跳到历史消息后仍在后台生成的新段落')
+    expect(
+      Math.abs((await state.panel.evaluate((element) => element.scrollTop)) - historyPosition),
+    ).toBeLessThanOrEqual(1)
+    await expect(targetButton).toHaveAttribute('aria-current', 'location')
+    await page.locator('.composer textarea').focus()
+    await page.getByRole('heading', { name: '长会话', exact: true }).hover()
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await page.screenshot({
+      path: testInfo.outputPath('conversation-outline-history-light.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+    await state.panel.evaluate((element) => {
+      const row = element.querySelector<HTMLElement>('[data-message-id="assistant-107"]')!
+      element.scrollTop +=
+        row.getBoundingClientRect().top - element.getBoundingClientRect().top - 16
+    })
+    await expect(items.nth(7)).toHaveAttribute('aria-current', 'location')
+    await expect(targetButton).not.toHaveAttribute('aria-current', 'location')
+    expect(state.errors).toEqual([])
+  })
+
+  test('replaces the outline and target locations when switching Conversations', async ({
+    page,
+  }) => {
+    const state = await outlineFixtures(page)
+    await page.goto('/projects/3?id=4')
+    const items = state.outline.getByRole('button', { name: /^跳转到/ })
+    await expect(items).toHaveCount(16)
+    await items.nth(4).click()
+    await page
+      .getByRole('region', { name: '工作区项目与会话' })
+      .getByRole('link', { name: '短会话', exact: true })
+      .click()
+    await expect(page.getByRole('heading', { name: '短会话', exact: true })).toBeVisible()
+    await expect(items).toHaveCount(2)
+    await expect(page.locator('.message-row[data-message-id="user-1040"]')).toHaveCount(0)
+    await items.first().focus()
+    const beforeKeyboardPreview = await state.panel.evaluate((element) => element.scrollTop)
+    await items.first().press('ArrowDown')
+    await expect(items.nth(1)).toBeFocused()
+    await expect(page.getByRole('tooltip')).toContainText('第2次请求')
+    await expect(page.getByRole('tooltip')).toContainText('第2轮回复')
+    expect(await state.panel.evaluate((element) => element.scrollTop)).toBe(beforeKeyboardPreview)
+    await items.nth(1).press('Enter')
+    await expect(items.nth(1)).toHaveAttribute('aria-current', 'location')
+    await expect(page.locator('.message-row[data-message-id="user-2010"]')).toBeInViewport()
+    await items.nth(1).press('Home')
+    await expect(items.first()).toBeFocused()
+    await items.first().press('Enter')
+    await expect(items.first()).toHaveAttribute('aria-current', 'location')
+    await expect(page.locator('.message-row[data-message-id="user-2000"]')).toBeInViewport()
+    await expect(page.getByRole('tooltip')).toContainText('第1次请求')
+    await items.nth(1).click()
+    await expect(items.nth(1)).toHaveAttribute('aria-current', 'location')
+    await expect(page.locator('.message-row[data-message-id="user-2010"]')).toBeInViewport()
+    await page.setViewportSize({ width: 1440, height: 2400 })
+    await expect
+      .poll(() => state.panel.evaluate((element) => element.scrollHeight - element.clientHeight))
+      .toBe(0)
+    await items.first().click()
+    await expect(items.first()).toHaveAttribute('aria-current', 'location')
+    expect(state.errors).toEqual([])
+  })
+
+  test('hides the outline and its gutter when a viewport, split pane or composer leaves too little room', async ({
+    page,
+  }, testInfo) => {
+    const state = await outlineFixtures(page)
+    await page.route('**/workspace-files**', (route) =>
+      route.fulfill({
+        json: {
+          status: 'success',
+          code: 200,
+          info: '',
+          data: {
+            path: '',
+            generation: '1',
+            entries: [],
+            nextCursor: null,
+            loaded: true,
+            online: true,
+            supported: true,
+            operation: null,
+            maxFileBytes: 20971520,
+          },
+        },
+      }),
+    )
+    await page.goto('/projects/3?id=4')
+    const items = state.outline.getByRole('button', { name: /^跳转到/ })
+    await expect(items).toHaveCount(16)
+    await page.getByRole('button', { name: '切换到深色主题' }).click()
+    const expectNoGutter = async () => {
+      await expect(state.outline).toBeHidden()
+      await expect(page.locator('.message-viewport')).not.toHaveClass(/message-viewport--outlined/)
+      await expect
+        .poll(() =>
+          state.panel.evaluate((element) => {
+            const styles = getComputedStyle(element)
+            return parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight)
+          }),
+        )
+        .toBe(0)
+    }
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 700 })
+      await expectNoGutter()
+      expect(await page.locator('body').evaluate((body) => body.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+      await page.screenshot({
+        path: testInfo.outputPath(`conversation-outline-hidden-${width}-dark.png`),
+        fullPage: true,
+        animations: 'disabled',
+      })
+    }
+
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await expect(items).toHaveCount(16)
+    await page.getByRole('button', { name: '工作区文件', exact: true }).click()
+    const separator = page.getByRole('separator', { name: '调整会话宽度' })
+    await separator.press('Home')
+    await expect
+      .poll(() => page.locator('.message-viewport').evaluate((element) => element.clientWidth))
+      .toBeLessThan(640)
+    await expectNoGutter()
+    await separator.press('End')
+    await expect(state.outline).toBeVisible()
+    await page
+      .getByRole('complementary', { name: '工作区文件' })
+      .getByRole('button', { name: '收起工作区文件' })
+      .click()
+
+    await page.setViewportSize({ width: 1440, height: 600 })
+    await expect(state.outline).toBeVisible()
+    await page.getByRole('button', { name: '展开输入框' }).click()
+    await expect
+      .poll(() =>
+        page.locator('.message-viewport').evaluate((element) => {
+          const dock = element.querySelector('.conversation-dock')!
+          return element.clientHeight - dock.getBoundingClientRect().height - 40
+        }),
+      )
+      .toBeLessThan(180)
+    await expectNoGutter()
+    await page.screenshot({
+      path: testInfo.outputPath('conversation-outline-hidden-expanded-dark.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+    await page.getByRole('button', { name: '收起输入框' }).click()
+    await expect(items).toHaveCount(16)
+    await expect(state.outline).toBeVisible()
+    await page.setViewportSize({ width: 1440, height: 500 })
+    await expect(state.outline).toBeVisible()
+    await items.first().hover()
+    const beforeEndPreview = await state.panel.evaluate((element) => element.scrollTop)
+    await items.first().press('End')
+    await expect(items.last()).toBeFocused()
+    await expect
+      .poll(() =>
+        state.outline
+          .locator('.conversation-outline__track')
+          .evaluate((element) => element.scrollTop),
+      )
+      .toBeGreaterThan(0)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+    await expect(page.getByRole('tooltip')).toContainText('第16次请求')
+    await expect(page.getByRole('tooltip')).toContainText('第16轮回复')
+    expect(await state.panel.evaluate((element) => element.scrollTop)).toBe(beforeEndPreview)
+    expect(state.errors).toEqual([])
+  })
+
+  test('magnifies nearby Turn lines symmetrically from a fixed left edge without moving content', async ({
+    page,
+  }, testInfo) => {
+    const state = await outlineFixtures(page)
+    await page.goto('/projects/3?id=4')
+    const items = state.outline.getByRole('button', { name: /^跳转到/ })
+    const lines = state.outline.locator('.conversation-outline__line')
+    await expect(items).toHaveCount(16)
+    const scales = () =>
+      lines.evaluateAll((elements) =>
+        elements.map((element) => {
+          const transform = getComputedStyle(element).transform
+          return transform === 'none' ? 1 : new DOMMatrixReadOnly(transform).a
+        }),
+      )
+    await expect.poll(scales).toEqual(Array(16).fill(1))
+    const before = await items.evaluateAll((elements) =>
+      elements.map((element) => {
+        const button = element.getBoundingClientRect()
+        const line = element.querySelector('.conversation-outline__line')!.getBoundingClientRect()
+        return {
+          x: button.x,
+          y: button.y,
+          width: button.width,
+          height: button.height,
+          lineX: line.x,
+          lineY: line.y,
+        }
+      }),
+    )
+    const messageBox = (await page.locator('.message-row').last().boundingBox())!
+    const center = before[7]!
+    await page.mouse.move(center.x + center.width / 2, center.y + center.height / 2)
+    await expect.poll(async () => (await scales())[7]).toBeCloseTo(2.6, 2)
+    const magnified = await scales()
+    for (const offset of [1, 2, 3]) {
+      expect(magnified[7 - offset]).toBeCloseTo(magnified[7 + offset]!, 2)
+      expect(magnified[7 + offset]).toBeGreaterThan(1)
+      expect(magnified[7 + offset - 1]).toBeGreaterThan(magnified[7 + offset]!)
+      const distance = before[7 + offset]!.y - center.y
+      expect(magnified[7 + offset]).toBeCloseTo(
+        1 + 0.8 * (1 + Math.cos((Math.PI * distance) / 90)),
+        2,
+      )
+    }
+    expect(magnified[0]).toBeCloseTo(1, 2)
+    expect(magnified[15]).toBeCloseTo(1, 2)
+    const widths = await lines.evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().width),
+    )
+    expect(widths[7]).toBe(Math.max(...widths))
+    const after = await items.evaluateAll((elements) =>
+      elements.map((element) => {
+        const button = element.getBoundingClientRect()
+        const line = element.querySelector('.conversation-outline__line')!.getBoundingClientRect()
+        return {
+          x: button.x,
+          y: button.y,
+          width: button.width,
+          height: button.height,
+          lineX: line.x,
+          lineY: line.y,
+        }
+      }),
+    )
+    expect(after).toEqual(before)
+    expect(await page.locator('.message-row').last().boundingBox()).toEqual(messageBox)
+    await expect(page.getByRole('tooltip')).toContainText('第8次请求')
+    await expect(page.getByRole('tooltip')).toContainText('第8轮回复')
+    await page.screenshot({
+      path: testInfo.outputPath('conversation-outline-fisheye-light.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+    await page.getByRole('button', { name: '切换到深色主题' }).click()
+    await items.nth(7).hover()
+    await expect.poll(async () => (await scales())[7]).toBeCloseTo(2.6, 2)
+    await page.screenshot({
+      path: testInfo.outputPath('conversation-outline-fisheye-dark.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+    await page.getByRole('heading', { name: '长会话', exact: true }).hover()
+    await expect.poll(scales).toEqual(Array(16).fill(1))
+    expect(state.errors).toEqual([])
+  })
 })
 
 async function fixtures(page: Page, authenticated = true) {
@@ -716,14 +1487,27 @@ test('sidebar creates a project and a conversation without leaving the workspace
   await expect(page.locator('.message-avatar')).toHaveCount(0)
   await expect(page.locator('.message-row--user')).toHaveCSS('justify-content', 'flex-end')
   const row = await page.locator('.message-row--assistant').boundingBox()
-  const panel = await page.locator('.message-panel').boundingBox()
-  expect(Math.abs(row!.x + row!.width / 2 - (panel!.x + panel!.width / 2))).toBeLessThan(12)
+  const content = await page.locator('.message-panel__content').boundingBox()
+  expect(Math.abs(row!.x + row!.width / 2 - (content!.x + content!.width / 2))).toBeLessThan(1)
   await page.screenshot({ path: 'test-results/workspace-chat.png', fullPage: true })
   expect(errors).toEqual([])
 })
 
 test('sidebar search and mobile drawer keep conversations accessible', async ({ page }) => {
   const errors = await fixtures(page)
+  await page.route(/\/api\/v1\/projects(?:\?.*)?$/, (route) => {
+    const keyword = new URL(route.request().url()).searchParams.get('keyword') || ''
+    return route.fulfill({
+      json: {
+        status: 'success',
+        code: 200,
+        info: '',
+        data: [project].filter(
+          (item) => item.projectName.includes(keyword) || conversation.title.includes(keyword),
+        ),
+      },
+    })
+  })
   await page.goto('/devices')
   await page.getByPlaceholder('搜索项目或会话').fill('不存在')
   await page.getByPlaceholder('搜索项目或会话').press('Enter')
@@ -743,6 +1527,501 @@ test('sidebar search and mobile drawer keep conversations accessible', async ({ 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: '打开导航' })).toBeFocused()
   expect(errors).toEqual([])
+})
+
+test('Conversation displays an active writer error and retains failure after legacy refresh', async ({
+  page,
+}, testInfo) => {
+  const errors = await fixtures(page)
+  const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+  const failure =
+    'Codex method failed: thread/resume: thread 01a0846c-f650-7291-ab2f-48c61a1bb4f4 already has an active writer'
+  let socket: WebSocketRoute | undefined
+  let failed = false
+  let activeTurnReads = 0
+  let messageStateReads = 0
+  // Reproduce the older server response: neither list nor detail contains latest Turn fields.
+  await page.route(/\/api\/v1\/projects\/3\/conversations(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: response([conversation]) }),
+  )
+  await page.route('**/api/v1/projects/3/conversations/4', (route) =>
+    route.fulfill({ json: response(conversation) }),
+  )
+  await page.route('**/active-turn', (route) => {
+    activeTurnReads++
+    return route.fulfill({
+      json: response(
+        failed ? null : { id: 18, status: 'CREATED', preparationPhase: 'EXPERT_SKILLS' },
+      ),
+    })
+  })
+  await page.route('**/approvals', (route) => route.fulfill({ json: response([]) }))
+  await page.route('**/message-state?*', (route) => {
+    messageStateReads++
+    return route.fulfill({
+      json: response({
+        turnId: 18,
+        cursor: 0,
+        hasMore: false,
+        degraded: false,
+        resetRequired: false,
+        updates: [],
+        messages: [
+          {
+            id: 180,
+            turnId: 18,
+            sequenceNo: 1,
+            role: 'USER',
+            messageType: 'TEXT',
+            status: 'COMPLETED',
+            content: '请继续检查项目。',
+          },
+        ],
+      }),
+    })
+  })
+  await page.routeWebSocket('**/ws/client?*', (connected) => {
+    socket = connected
+  })
+  await page.goto('/projects/3?id=4')
+  const workbench = page.locator('.conversation-workbench')
+  const titleStatus = workbench.locator('.conversation-title [role="status"]')
+  const stop = workbench.getByRole('button', { name: '停止生成', exact: true })
+  const input = workbench.getByRole('textbox')
+  await expect(titleStatus).toHaveText('正在准备专家 Skills')
+  await expect(stop).toBeVisible()
+  await expect(input).toBeDisabled()
+  await expect.poll(() => Boolean(socket)).toBe(true)
+
+  const previousActiveReads = activeTurnReads
+  const previousMessageReads = messageStateReads
+  failed = true
+  socket!.send(
+    JSON.stringify({
+      type: 'ERROR',
+      deviceId: 1,
+      correlationId: '18',
+      payload: { commandType: 'START_TURN', errorCode: 'COMMAND_FAILED', message: failure },
+    }),
+  )
+  const failureAlert = workbench.getByRole('alert').filter({ hasText: failure })
+  await expect(titleStatus).toHaveText('回复失败')
+  await expect(failureAlert).toHaveText(failure)
+  await expect(failureAlert).toBeVisible()
+  await expect.poll(() => activeTurnReads).toBeGreaterThan(previousActiveReads)
+  await expect.poll(() => messageStateReads).toBeGreaterThan(previousMessageReads)
+  await expect(stop).toHaveCount(0)
+  await expect(workbench.locator('.agent-message')).toHaveCount(0)
+  await expect(workbench.locator('.message-row--user')).toContainText('请继续检查项目。')
+
+  // A further manual refresh returns active-turn=null again without erasing the received failure.
+  const beforeManualRefresh = activeTurnReads
+  await workbench.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect.poll(() => activeTurnReads).toBeGreaterThan(beforeManualRefresh)
+  await expect(titleStatus).toHaveText('回复失败')
+  await expect(failureAlert).toBeVisible()
+  await expect(stop).toHaveCount(0)
+  await expect(input).toBeEnabled()
+  await input.fill('释放占用后重试原会话')
+  await expect(workbench.getByRole('button', { name: '发送任务', exact: true })).toBeEnabled()
+  await page.screenshot({
+    path: testInfo.outputPath('conversation-active-writer-error.png'),
+    fullPage: true,
+  })
+  expect(errors).toEqual([])
+})
+
+test.describe('sidebar Conversation activity', () => {
+  type Snapshot = typeof conversation & {
+    latestTurnId: number | null
+    latestTurnStatus: string | null
+    latestTurnFailureMessage?: string | null
+    latestTurnHasIncompleteMessage?: boolean
+  }
+
+  async function activityFixtures(page: Page) {
+    const errors = await fixtures(page)
+    const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+    const snapshots: Snapshot[] = [
+      { ...conversation, latestTurnId: 7, latestTurnStatus: 'COMPLETED' },
+      {
+        ...conversation,
+        id: 5,
+        title: '后台会话',
+        latestTurnId: 20,
+        latestTurnStatus: 'COMPLETED',
+      },
+      {
+        ...conversation,
+        id: 6,
+        title: '失败会话',
+        latestTurnId: 30,
+        latestTurnStatus: 'FAILED',
+        latestTurnFailureMessage: '模型请求失败',
+      },
+      {
+        ...conversation,
+        id: 7,
+        title: '空会话',
+        latestTurnId: null,
+        latestTurnStatus: null,
+      },
+      {
+        ...conversation,
+        id: 8,
+        title: '不完整会话',
+        latestTurnId: 40,
+        latestTurnStatus: 'COMPLETED',
+        latestTurnHasIncompleteMessage: true,
+      },
+    ]
+    const sockets: WebSocketRoute[] = []
+    let snapshotRequests = 0
+    await page.route(/\/api\/v1\/projects\/3\/conversations(?:\?.*)?$/, (route) => {
+      snapshotRequests++
+      return route.fulfill({ json: response(snapshots) })
+    })
+    await page.route(/\/api\/v1\/projects\/3\/conversations\/status\?.*/, (route) => {
+      snapshotRequests++
+      const ids = new URL(route.request().url()).searchParams.get('ids')!.split(',').map(Number)
+      return route.fulfill({ json: response(snapshots.filter((item) => ids.includes(item.id))) })
+    })
+    const snapshotFor = (url: string) => {
+      const id = Number(new URL(url).pathname.match(/\/conversations\/(\d+)/)?.[1])
+      return snapshots.find((item) => item.id === id)!
+    }
+    await page.route(/\/api\/v1\/projects\/3\/conversations\/\d+$/, (route) =>
+      route.fulfill({ json: response(snapshotFor(route.request().url())) }),
+    )
+    await page.route('**/active-turn', (route) => {
+      const snapshot = snapshotFor(route.request().url())
+      return route.fulfill({
+        json: response(
+          ['CREATED', 'RUNNING', 'WAITING_APPROVAL'].includes(snapshot.latestTurnStatus || '')
+            ? { id: snapshot.latestTurnId, status: snapshot.latestTurnStatus }
+            : null,
+        ),
+      })
+    })
+    await page.route('**/message-state?*', (route) => {
+      const snapshot = snapshotFor(route.request().url())
+      const turnId = snapshot.latestTurnId
+      const userMessage = {
+        id: (turnId || 0) * 10,
+        turnId,
+        sequenceNo: 1,
+        role: 'USER',
+        messageType: 'TEXT',
+        status: 'COMPLETED',
+        content: `${snapshot.title}的请求`,
+      }
+      return route.fulfill({
+        json: response({
+          turnId,
+          cursor: 0,
+          hasMore: false,
+          degraded: false,
+          resetRequired: false,
+          updates: [],
+          messages:
+            turnId == null
+              ? []
+              : snapshot.latestTurnStatus === 'FAILED'
+                ? [userMessage]
+                : [
+                    userMessage,
+                    {
+                      id: turnId * 10 + 1,
+                      turnId,
+                      sequenceNo: 2,
+                      role: 'ASSISTANT',
+                      messageType: 'TEXT',
+                      status: snapshot.latestTurnHasIncompleteMessage
+                        ? 'INCOMPLETE'
+                        : snapshot.latestTurnStatus === 'COMPLETED'
+                          ? 'COMPLETED'
+                          : 'STREAMING',
+                      content: `${snapshot.title}的回复`,
+                    },
+                  ],
+        }),
+      })
+    })
+    await page.route('**/approvals', (route) => route.fulfill({ json: response([]) }))
+    await page.routeWebSocket('**/ws/client?*', (socket) => sockets.push(socket))
+    const link = (title: string) =>
+      page
+        .getByRole('region', { name: '工作区项目与会话' })
+        .getByRole('link', { name: title, exact: true })
+    const indicator = (title: string) => link(title).locator('.workspace-conversation__activity')
+    return { errors, snapshots, sockets, link, indicator, snapshotRequests: () => snapshotRequests }
+  }
+
+  test('restores latest Turn snapshots, incomplete messages and accessible status after reload', async ({
+    page,
+  }, testInfo) => {
+    const state = await activityFixtures(page)
+    await page.goto('/devices')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCSS(
+      'background-color',
+      'rgb(37, 99, 235)',
+    )
+    await expect(state.link('后台会话')).toHaveAccessibleName('后台会话')
+    await expect(state.link('后台会话')).toHaveAccessibleDescription('回复已完成')
+    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'error')
+    await expect(state.indicator('失败会话').locator('.workspace-conversation__dot')).toHaveCSS(
+      'background-color',
+      'rgb(220, 38, 38)',
+    )
+    await expect(state.link('失败会话')).toHaveAccessibleDescription('模型请求失败')
+    await expect(state.indicator('空会话')).toHaveAttribute('data-state', 'idle')
+    await expect(
+      state.indicator('空会话').locator('svg, .workspace-conversation__dot'),
+    ).toHaveCount(0)
+    await expect(state.indicator('不完整会话')).toHaveAttribute('data-state', 'error')
+    await expect(state.link('不完整会话')).toHaveAccessibleDescription('消息接收不完整')
+
+    await page.getByRole('button', { name: '切换到深色主题' }).click()
+    await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCSS(
+      'background-color',
+      'rgb(96, 165, 250)',
+    )
+    await expect(state.indicator('失败会话').locator('.workspace-conversation__dot')).toHaveCSS(
+      'background-color',
+      'rgb(248, 113, 113)',
+    )
+    const requestsBeforeReload = state.snapshotRequests()
+    await page.reload()
+    await expect.poll(state.snapshotRequests).toBeGreaterThan(requestsBeforeReload)
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'error')
+    await expect(state.indicator('不完整会话')).toHaveAttribute('data-state', 'error')
+    await expect(
+      state.indicator('空会话').locator('svg, .workspace-conversation__dot'),
+    ).toHaveCount(0)
+    await page.screenshot({
+      path: testInfo.outputPath('sidebar-activity-dark.png'),
+      fullPage: true,
+    })
+    expect(state.errors).toEqual([])
+  })
+
+  test('updates non-current Conversations over the same socket after leaving the workspace', async ({
+    page,
+  }) => {
+    const state = await activityFixtures(page)
+    const background = state.snapshots.find((item) => item.id === 5)!
+    await page.goto('/projects/3?id=4')
+    await expect(page.getByRole('heading', { name: '测试会话', exact: true })).toBeVisible()
+    await expect(state.indicator('测试会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await expect.poll(() => state.sockets.length).toBe(1)
+    const publish = (type: string, turnId: number, status: string) => {
+      background.latestTurnId = turnId
+      background.latestTurnStatus = status
+      state.sockets[0]!.send(
+        JSON.stringify({ type, payload: { projectId: 3, conversationId: 5, turnId } }),
+      )
+    }
+
+    publish('TURN_STARTED', 21, 'RUNNING')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'running')
+    const spinner = state.indicator('后台会话').locator('.workspace-conversation__spinner')
+    await expect(spinner).toBeVisible()
+    await expect(spinner).toHaveCSS('animation-name', 'conversation-activity-spin')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(spinner).toHaveCSS('animation-name', 'none')
+    await expect(state.link('后台会话')).toHaveAccessibleDescription('Agent 正在回复')
+    await expect(page.getByRole('heading', { name: '测试会话', exact: true })).toBeVisible()
+
+    await page.getByRole('link', { name: '设备管理', exact: true }).click()
+    await expect(page).toHaveURL(/\/devices$/)
+    await expect(page.locator('.conversation-workbench')).toHaveCount(0)
+    expect(state.sockets).toHaveLength(1)
+    publish('TURN_COMPLETED', 21, 'COMPLETED')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toBeVisible()
+    publish('TURN_STARTED', 22, 'RUNNING')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'running')
+    publish('TURN_FAILED', 22, 'FAILED')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'error')
+    await expect(state.link('后台会话')).toHaveAccessibleDescription('回复异常')
+    await expect(state.indicator('空会话')).toHaveAttribute('data-state', 'idle')
+    await page.reload()
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'error')
+    expect(state.errors).toEqual([])
+  })
+
+  test('marks a disconnected running Conversation red and reconciles missed completion on reconnect', async ({
+    page,
+  }) => {
+    const state = await activityFixtures(page)
+    const background = state.snapshots.find((item) => item.id === 5)!
+    background.latestTurnStatus = 'RUNNING'
+    await page.goto('/devices')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'running')
+    await expect.poll(() => state.sockets.length).toBe(1)
+    await state.sockets[0]!.close({ code: 1001, reason: 'Test connection interrupted' })
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'error')
+    await expect(state.link('后台会话')).toHaveAccessibleDescription('连接已断开，暂时无法接收消息')
+    await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCSS(
+      'background-color',
+      'rgb(220, 38, 38)',
+    )
+    await expect(state.indicator('测试会话')).toHaveAttribute('data-state', 'completed')
+
+    // No terminal socket frame is sent: the restored connection must consult the server snapshot.
+    background.latestTurnStatus = 'COMPLETED'
+    const beforeReconnect = state.snapshotRequests()
+    await expect.poll(() => state.sockets.length, { timeout: 10000 }).toBe(2)
+    await expect.poll(state.snapshotRequests).toBeGreaterThan(beforeReconnect)
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await expect(state.link('后台会话')).toHaveAccessibleDescription('回复已完成')
+    await expect(
+      state.indicator('后台会话').locator('.workspace-conversation__spinner'),
+    ).toHaveCount(0)
+    expect(state.errors).toEqual([])
+  })
+
+  test('clears blue and red markers after reading and keeps them cleared after reload', async ({
+    page,
+  }) => {
+    const state = await activityFixtures(page)
+    await page.goto('/devices')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'error')
+
+    await state.link('后台会话').click()
+    await expect(page.locator('.agent-answer')).toContainText('后台会话的回复')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCount(0)
+    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'error')
+
+    await state.link('失败会话').click()
+    const workbench = page.locator('.conversation-workbench')
+    await expect(workbench.getByRole('alert').filter({ hasText: '模型请求失败' })).toBeVisible()
+    await expect(workbench.locator('.conversation-title [role="status"]')).toHaveText('回复失败')
+    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('失败会话').locator('.workspace-conversation__dot')).toHaveCount(0)
+
+    await page.getByRole('link', { name: '设备管理', exact: true }).click()
+    await page.reload()
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('不完整会话')).toHaveAttribute('data-state', 'error')
+    expect(state.errors).toEqual([])
+  })
+
+  test('shows new terminal markers for later Turns of a previously read Conversation on a management page', async ({
+    page,
+  }) => {
+    const state = await activityFixtures(page)
+    const background = state.snapshots.find((item) => item.id === 5)!
+    await page.goto('/projects/3?id=5')
+    await expect(page.locator('.agent-answer')).toContainText('后台会话的回复')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    await expect.poll(() => state.sockets.length).toBe(1)
+    const publish = (type: string, turnId: number, status: string) => {
+      background.latestTurnId = turnId
+      background.latestTurnStatus = status
+      background.latestTurnHasIncompleteMessage = false
+      background.latestTurnFailureMessage = status === 'FAILED' ? '后续执行失败' : null
+      state.sockets.at(-1)!.send(
+        JSON.stringify({
+          type,
+          payload: {
+            projectId: 3,
+            conversationId: 5,
+            turnId,
+            reason: background.latestTurnFailureMessage,
+          },
+        }),
+      )
+    }
+
+    await page.getByRole('link', { name: '设备管理', exact: true }).click()
+    publish('TURN_STARTED', 21, 'RUNNING')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'running')
+    publish('TURN_COMPLETED', 21, 'COMPLETED')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await page.reload()
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+    await expect.poll(() => state.sockets.length).toBe(2)
+    await state.link('后台会话').click()
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+
+    await page.getByRole('link', { name: '设备管理', exact: true }).click()
+    publish('TURN_STARTED', 22, 'RUNNING')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'running')
+    publish('TURN_FAILED', 22, 'FAILED')
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'error')
+    await state.link('后台会话').click()
+    await expect(
+      page
+        .locator('.conversation-workbench')
+        .getByRole('alert')
+        .filter({ hasText: '后续执行失败' }),
+    ).toBeVisible()
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    expect(state.errors).toEqual([])
+  })
+
+  test('keeps completion unread while its Conversation is in a background tab', async ({
+    page,
+  }) => {
+    const state = await activityFixtures(page)
+    const background = state.snapshots.find((item) => item.id === 5)!
+    background.latestTurnStatus = 'RUNNING'
+    await page.goto('/projects/3?id=5')
+    await page.bringToFront()
+    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'running')
+    await expect.poll(() => state.sockets.length).toBe(1)
+    // Headless Chrome keeps multiple pages focused. Simulate the browser signals instead.
+    const setForeground = (foreground: boolean) =>
+      page.evaluate((value) => {
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: value ? 'visible' : 'hidden',
+        })
+        Object.defineProperty(document, 'hasFocus', {
+          configurable: true,
+          value: () => value,
+        })
+        document.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event(value ? 'focus' : 'blur'))
+      }, foreground)
+    try {
+      await setForeground(false)
+      await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(false)
+      expect(await page.evaluate(() => document.visibilityState)).toBe('hidden')
+      background.latestTurnStatus = 'COMPLETED'
+      state.sockets[0]!.send(
+        JSON.stringify({
+          type: 'TURN_COMPLETED',
+          payload: { projectId: 3, conversationId: 5, turnId: 20 },
+        }),
+      )
+      await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
+      await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCount(
+        1,
+      )
+      await setForeground(true)
+      await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true)
+      await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+      await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCount(
+        0,
+      )
+    } finally {
+      await page.evaluate(() => {
+        Reflect.deleteProperty(document, 'visibilityState')
+        Reflect.deleteProperty(document, 'hasFocus')
+        document.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event('focus'))
+      })
+    }
+    expect(state.errors).toEqual([])
+  })
 })
 
 test('conversation uploads and sends an attachment-only message and restores its download', async ({
@@ -814,6 +2093,27 @@ test('conversation uploads and sends an attachment-only message and restores its
     buffer: Buffer.from('hello'),
   })
   await expect(page.getByText('已就绪：requirements.txt')).toBeVisible()
+  const queue = page.getByRole('list', { name: '待发送附件' })
+  await expect(queue.locator('.attachment-queue__file')).toHaveCount(1)
+  await expect(queue.locator('.attachment-queue__placeholder')).toHaveCount(4)
+  const queueBox = (await queue.boundingBox())!
+  const hintBox = (await page
+    .locator('.composer')
+    .getByText(/上传到工作区根目录 · 最多/)
+    .boundingBox())!
+  const expertBox = (await page.locator('.composer__expert').boundingBox())!
+  const retention = page.locator('.composer').getByText(/移除附件只取消消息关联/)
+  await expect(retention).toBeVisible()
+  const retentionBox = (await retention.boundingBox())!
+  const inputBox = (await page.locator('.composer textarea').boundingBox())!
+  const composerBox = (await page.locator('.composer').boundingBox())!
+  expect(Math.abs(composerBox.y - queueBox.y - queueBox.height)).toBeLessThanOrEqual(2)
+  expect(hintBox.y).toBeGreaterThanOrEqual(composerBox.y)
+  expect(
+    hintBox.x >= expertBox.x + expertBox.width || hintBox.y >= expertBox.y + expertBox.height,
+  ).toBe(true)
+  expect(retentionBox.y).toBeGreaterThanOrEqual(hintBox.y + hintBox.height)
+  expect(retentionBox.y + retentionBox.height).toBeLessThanOrEqual(inputBox.y)
   await page.getByRole('button', { name: '发送任务' }).click()
   await expect.poll(() => sent).not.toBeNull()
   expect(sent!.message).toBe('')
@@ -1136,4 +2436,647 @@ test('workspace PDF preview renders locally, preserves pages across layout and r
   await tree.getByRole('button', { name: '预览 empty.txt' }).click()
   await expect(preview).toContainText('空文件')
   expect(errors).toEqual([])
+})
+
+test.describe('workspace sidebar pagination', () => {
+  type PagedConversation = typeof conversation & {
+    latestTurnId: number | null
+    latestTurnStatus: string | null
+    latestTurnHasIncompleteMessage: boolean
+  }
+  type PageRead = {
+    kind: 'projects' | 'conversations'
+    projectId: number | null
+    page: number
+    size: number
+    keyword: string
+    settled: boolean
+  }
+
+  async function paginationFixtures(page: Page) {
+    const errors = await fixtures(page)
+    const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+    const projects = Array.from({ length: 25 }, (_, index) => ({
+      ...project,
+      id: index + 3,
+      projectName: index === 24 ? '后页项目25' : `分页项目${String(index + 1).padStart(2, '0')}`,
+      conversationCount: index === 0 ? 121 : index === 24 ? 41 : 0,
+    }))
+    const makeConversations = (projectId: number, startId: number, count: number) =>
+      Array.from({ length: count }, (_, index): PagedConversation => ({
+        ...conversation,
+        id: startId + index,
+        projectId,
+        projectName: projects.find((item) => item.id === projectId)!.projectName,
+        title:
+          projectId === 3
+            ? index === 120
+              ? '未加载会话目标'
+              : `分页会话${String(index + 1).padStart(3, '0')}`
+            : index === 40
+              ? '后页直达会话'
+              : `后页会话${String(index + 1).padStart(3, '0')}`,
+        codexThreadId: `thread-${startId + index}`,
+        latestTurnId: startId + index + 10000,
+        latestTurnStatus: projectId === 3 && index === 10 ? 'RUNNING' : 'COMPLETED',
+        latestTurnHasIncompleteMessage: false,
+      }))
+    const conversations: Record<number, PagedConversation[]> = Object.fromEntries(
+      projects.map((item) => [item.id, []]),
+    )
+    conversations[3] = makeConversations(3, 3001, 121)
+    conversations[27] = makeConversations(27, 270001, 41)
+    const projectMatches = (item: (typeof projects)[number], keyword: string) =>
+      [
+        item.projectName,
+        item.deviceName,
+        device.deviceCode,
+        item.workspaceName,
+        item.rootPath,
+      ].some((value) => value.includes(keyword))
+    const reads: PageRead[] = []
+    const statusReads: { projectId: number; ids: number[] }[] = []
+    const sockets: WebSocketRoute[] = []
+    const failures = new Set<string>()
+    const holds = new Map<string, Promise<void>>()
+    const readKey = (kind: PageRead['kind'], projectId: number | null, keyword: string) =>
+      `${kind}:${projectId || 0}:${keyword}`
+    const hold = (kind: PageRead['kind'], projectId: number | null, keyword: string) => {
+      let release!: () => void
+      const key = readKey(kind, projectId, keyword)
+      holds.set(key, new Promise<void>((resolve) => (release = resolve)))
+      return () => {
+        holds.delete(key)
+        release()
+      }
+    }
+    async function fulfillPage<T>(
+      route: Route,
+      kind: PageRead['kind'],
+      projectId: number | null,
+      source: T[],
+    ) {
+      const params = new URL(route.request().url()).searchParams
+      const pageNumber = Number(params.get('page') || 1)
+      const size = Number(params.get('size') || (kind === 'projects' ? 20 : 10))
+      const keyword = params.get('keyword') || ''
+      const read: PageRead = { kind, projectId, page: pageNumber, size, keyword, settled: false }
+      reads.push(read)
+      const key = readKey(kind, projectId, keyword)
+      await holds.get(key)
+      try {
+        if (failures.delete(`${key}:${pageNumber}`)) {
+          await route.fulfill({
+            status: 503,
+            json: { status: 'error', code: 503, info: '分页暂时不可用', data: null },
+          })
+        } else {
+          await route.fulfill({
+            json: response({
+              items: source.slice((pageNumber - 1) * size, pageNumber * size),
+              total: source.length,
+              page: pageNumber,
+              size,
+            }),
+          })
+        }
+      } finally {
+        read.settled = true
+      }
+    }
+    await page.route(/\/api\/v1\/projects(?:\?.*)?$/, async (route) => {
+      if (route.request().method() === 'POST') {
+        const created = {
+          ...project,
+          id: 900,
+          projectName: route.request().postDataJSON().projectName,
+          conversationCount: 0,
+        }
+        projects.push(created)
+        conversations[created.id] = []
+        await route.fulfill({ json: response(created) })
+        return
+      }
+      const keyword = new URL(route.request().url()).searchParams.get('keyword') || ''
+      const filtered = projects.filter(
+        (item) =>
+          projectMatches(item, keyword) ||
+          conversations[item.id]?.some((value) => value.title.includes(keyword)),
+      )
+      await fulfillPage(route, 'projects', null, filtered)
+    })
+    await page.route(/\/api\/v1\/projects\/\d+$/, (route) => {
+      const id = Number(new URL(route.request().url()).pathname.split('/').at(-1))
+      return route.fulfill({ json: response(projects.find((item) => item.id === id)) })
+    })
+    await page.route(/\/api\/v1\/projects\/\d+\/conversations(?:\?.*)?$/, async (route) => {
+      const url = new URL(route.request().url())
+      const projectId = Number(url.pathname.match(/\/projects\/(\d+)/)![1])
+      if (route.request().method() === 'POST') {
+        const created: PagedConversation = {
+          ...conversation,
+          id: 900001,
+          projectId,
+          projectName: projects.find((item) => item.id === projectId)!.projectName,
+          title: route.request().postDataJSON().title,
+          latestTurnId: null,
+          latestTurnStatus: null,
+          latestTurnHasIncompleteMessage: false,
+        }
+        conversations[projectId]!.push(created)
+        await route.fulfill({ json: response(created) })
+        return
+      }
+      const keyword = url.searchParams.get('keyword') || ''
+      await fulfillPage(
+        route,
+        'conversations',
+        projectId,
+        (conversations[projectId] || []).filter(
+          (item) =>
+            projectMatches(
+              projects.find((value) => value.id === projectId)!,
+              keyword,
+            ) || item.title.includes(keyword),
+        ),
+      )
+    })
+    await page.route(/\/api\/v1\/projects\/\d+\/conversations\/status\?ids=.*/, (route) => {
+      const url = new URL(route.request().url())
+      const projectId = Number(url.pathname.match(/\/projects\/(\d+)/)![1])
+      const ids = url.searchParams
+        .getAll('ids')
+        .flatMap((value) => value.split(','))
+        .map(Number)
+      statusReads.push({ projectId, ids })
+      return route.fulfill({
+        json: response((conversations[projectId] || []).filter((item) => ids.includes(item.id))),
+      })
+    })
+    const snapshotFor = (url: string) => {
+      const match = new URL(url).pathname.match(/\/projects\/(\d+)\/conversations\/(\d+)/)!
+      return conversations[Number(match[1])]!.find((item) => item.id === Number(match[2]))!
+    }
+    await page.route(/\/api\/v1\/projects\/\d+\/conversations\/\d+$/, (route) =>
+      route.fulfill({ json: response(snapshotFor(route.request().url())) }),
+    )
+    await page.route('**/active-turn', (route) => {
+      const snapshot = snapshotFor(route.request().url())
+      return route.fulfill({
+        json: response(
+          snapshot.latestTurnStatus === 'RUNNING'
+            ? { id: snapshot.latestTurnId, status: 'RUNNING' }
+            : null,
+        ),
+      })
+    })
+    await page.route('**/message-state?*', (route) => {
+      const snapshot = snapshotFor(route.request().url())
+      const turnId = snapshot.latestTurnId
+      return route.fulfill({
+        json: response({
+          turnId,
+          cursor: 0,
+          hasMore: false,
+          degraded: false,
+          resetRequired: false,
+          updates: [],
+          messages:
+            turnId == null
+              ? []
+              : [
+                  {
+                    id: turnId * 10,
+                    turnId,
+                    sequenceNo: 1,
+                    role: 'USER',
+                    messageType: 'TEXT',
+                    status: 'COMPLETED',
+                    content: `${snapshot.title}的请求`,
+                  },
+                  {
+                    id: turnId * 10 + 1,
+                    turnId,
+                    sequenceNo: 2,
+                    role: 'ASSISTANT',
+                    messageType: 'TEXT',
+                    status: snapshot.latestTurnStatus === 'RUNNING' ? 'STREAMING' : 'COMPLETED',
+                    content: `${snapshot.title}的完整回复`,
+                  },
+                ],
+        }),
+      })
+    })
+    await page.route('**/approvals', (route) => route.fulfill({ json: response([]) }))
+    await page.routeWebSocket('**/ws/client?*', (socket) => sockets.push(socket))
+    const sidebar = page.getByRole('region', { name: '工作区项目与会话' })
+    const projectNode = (name: string) =>
+      sidebar.locator('.workspace-project').filter({
+        has: page.getByRole('link', { name, exact: true }),
+      })
+    const link = (title: string) => sidebar.getByRole('link', { name: title, exact: true })
+    return {
+      errors,
+      projects,
+      conversations,
+      reads,
+      statusReads,
+      sockets,
+      sidebar,
+      projectNode,
+      link,
+      hold,
+      failNext: (kind: PageRead['kind'], projectId: number | null, pageNumber: number) =>
+        failures.add(`${readKey(kind, projectId, '')}:${pageNumber}`),
+    }
+  }
+
+  test('loads projects and more than one hundred Conversations only on demand while preserving the draft', async ({
+    page,
+  }) => {
+    await page.clock.install()
+    const state = await paginationFixtures(page)
+    await page.goto('/projects/3?id=3001')
+    const current = state.projectNode('分页项目01')
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(20)
+    await expect(current.locator('a.workspace-conversation')).toHaveCount(10)
+    await expect(page.locator('.agent-answer')).toContainText('分页会话001的完整回复')
+    const draft = page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')
+    await draft.fill('加载更多目录时保留这条草稿')
+    await page.clock.fastForward(16000)
+    expect(
+      state.reads.every(
+        (read) => read.page === 1 && read.size === (read.kind === 'projects' ? 20 : 10),
+      ),
+    ).toBe(true)
+    expect(state.reads.filter((read) => read.kind === 'conversations').length).toBeLessThanOrEqual(
+      21,
+    )
+    await expect(current.locator('a.workspace-conversation')).toHaveCount(10)
+
+    for (const count of [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 121]) {
+      await current.getByRole('button', { name: '加载更多会话', exact: true }).click()
+      await expect(current.locator('a.workspace-conversation')).toHaveCount(count)
+    }
+    await state.link('未加载会话目标').scrollIntoViewIfNeeded()
+    await expect(state.link('未加载会话目标')).toBeInViewport()
+    await expect(current.getByRole('button', { name: '加载更多会话', exact: true })).toHaveCount(0)
+    expect(
+      state.reads
+        .filter((read) => read.kind === 'conversations' && read.projectId === 3 && read.page > 1)
+        .map((read) => read.page),
+    ).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+    await state.sidebar.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(25)
+    await expect(state.link('后页项目25')).toBeVisible()
+    await expect(
+      state.sidebar.getByRole('button', { name: '加载更多项目', exact: true }),
+    ).toHaveCount(0)
+    expect(state.reads.filter((read) => read.kind === 'projects').map((read) => read.page)).toEqual(
+      [1, 2],
+    )
+    const listCount = state.reads.length
+    const statusCount = state.statusReads.length
+    await page.clock.fastForward(16000)
+    await expect
+      .poll(() =>
+        state.statusReads
+          .slice(statusCount)
+          .flatMap((read) => read.ids)
+          .includes(3121),
+      )
+      .toBe(true)
+    expect(state.statusReads.every((read) => read.ids.length <= 100)).toBe(true)
+    expect(state.reads).toHaveLength(listCount)
+    await expect(current.locator('a.workspace-conversation')).toHaveCount(121)
+    await expect(draft).toHaveValue('加载更多目录时保留这条草稿')
+    await expect(page.getByRole('heading', { name: '分页会话001', exact: true })).toBeVisible()
+    expect(state.errors).toEqual([])
+  })
+
+  test('searches beyond unloaded pages and ignores obsolete project and Conversation responses', async ({
+    page,
+  }) => {
+    const state = await paginationFixtures(page)
+    await page.goto('/devices')
+    const search = state.sidebar.getByRole('textbox', { name: '搜索项目或会话' })
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(20)
+    const beforeTyping = state.reads.length
+    await search.fill('未')
+    await search.fill('未加载')
+    await search.fill('未加载会话目标')
+    await expect(state.link('未加载会话目标')).toBeVisible()
+    expect(
+      state.reads
+        .slice(beforeTyping)
+        .filter((read) => read.kind === 'projects')
+        .map((read) => read.keyword),
+    ).toEqual(['未加载会话目标'])
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(1)
+    expect(
+      state.reads.every(
+        (read) => read.page === 1 && read.size === (read.kind === 'projects' ? 20 : 10),
+      ),
+    ).toBe(true)
+
+    const releaseProject = state.hold('projects', null, '不存在的旧查询')
+    await search.fill('不存在的旧查询')
+    await search.press('Enter')
+    await expect
+      .poll(() => state.reads.some((read) => read.keyword === '不存在的旧查询'))
+      .toBe(true)
+    await search.fill('后页项目25')
+    await search.press('Enter')
+    await expect(state.link('后页项目25')).toBeVisible()
+    await expect(state.projectNode('后页项目25').locator('a.workspace-conversation')).toHaveCount(
+      10,
+    )
+    releaseProject()
+    await expect
+      .poll(() => state.reads.find((read) => read.keyword === '不存在的旧查询')?.settled)
+      .toBe(true)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+    await expect(state.link('后页项目25')).toBeVisible()
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(1)
+
+    const releaseConversations = state.hold('conversations', 3, '分页会话')
+    await search.fill('分页会话')
+    await search.press('Enter')
+    await expect
+      .poll(() =>
+        state.reads.some((read) => read.kind === 'conversations' && read.keyword === '分页会话'),
+      )
+      .toBe(true)
+    await search.fill('未加载会话目标')
+    await search.press('Enter')
+    await expect(state.link('未加载会话目标')).toBeVisible()
+    releaseConversations()
+    await expect
+      .poll(
+        () =>
+          state.reads.find((read) => read.kind === 'conversations' && read.keyword === '分页会话')
+            ?.settled,
+      )
+      .toBe(true)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+    await expect(state.link('未加载会话目标')).toBeVisible()
+    await expect(state.link('分页会话001')).toHaveCount(0)
+    await expect(state.projectNode('分页项目01').locator('a.workspace-conversation')).toHaveCount(1)
+    state.conversations[3]!.push({
+      ...state.conversations[3]![0]!,
+      id: 3999,
+      title: '未加载会话目标的新结果',
+    })
+    await search.press('Enter')
+    await expect(state.link('未加载会话目标的新结果')).toBeVisible()
+    await expect(state.projectNode('分页项目01').locator('a.workspace-conversation')).toHaveCount(2)
+    expect(state.errors).toEqual([])
+  })
+
+  test('retries failed second pages without skipping projects or Conversations', async ({
+    page,
+  }) => {
+    await page.clock.install()
+    const state = await paginationFixtures(page)
+    await page.goto('/devices')
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(20)
+    state.failNext('projects', null, 2)
+    await state.sidebar.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(state.sidebar.getByRole('alert')).toBeVisible()
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(20)
+    await page.clock.fastForward(6000)
+    await state.sidebar.getByRole('button', { name: /重试/ }).click()
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(25)
+    expect(state.reads.filter((read) => read.kind === 'projects').map((read) => read.page)).toEqual(
+      [1, 2, 2],
+    )
+
+    const current = state.projectNode('分页项目01')
+    state.failNext('conversations', 3, 2)
+    await current.getByRole('button', { name: '加载更多会话', exact: true }).click()
+    await expect(current.getByRole('alert')).toBeVisible()
+    await expect(current.locator('a.workspace-conversation')).toHaveCount(10)
+    await page.clock.fastForward(6000)
+    await current.getByRole('button', { name: /重试/ }).click()
+    await expect(current.locator('a.workspace-conversation')).toHaveCount(20)
+    expect(
+      state.reads
+        .filter((read) => read.kind === 'conversations' && read.projectId === 3)
+        .map((read) => read.page),
+    ).toEqual([1, 2, 2])
+    expect(state.errors).toEqual([])
+  })
+
+  test('keeps second-page activity live on a management page and clears it only after reading', async ({
+    page,
+  }) => {
+    await page.clock.install()
+    const state = await paginationFixtures(page)
+    await page.goto('/projects/3?id=3001')
+    const current = state.projectNode('分页项目01')
+    await current.getByRole('button', { name: '加载更多会话', exact: true }).click()
+    await expect(current.locator('a.workspace-conversation')).toHaveCount(20)
+    const marker = state.link('分页会话011').locator('.workspace-conversation__activity')
+    await expect(marker).toHaveAttribute('data-state', 'running')
+    await page.getByRole('link', { name: '设备管理', exact: true }).click()
+    const background = state.conversations[3]!.find((item) => item.id === 3011)!
+    background.latestTurnStatus = 'COMPLETED'
+    await expect.poll(() => state.sockets.length).toBe(1)
+    state.sockets[0]!.send(
+      JSON.stringify({
+        type: 'TURN_COMPLETED',
+        payload: { projectId: 3, conversationId: background.id, turnId: background.latestTurnId },
+      }),
+    )
+    await expect(marker).toHaveAttribute('data-state', 'completed')
+    const beforeRefresh = state.reads.length
+    await page.clock.fastForward(16000)
+    await expect.poll(() => state.statusReads.some((read) => read.ids.includes(3011))).toBe(true)
+    expect(state.reads).toHaveLength(beforeRefresh)
+    await expect(current.locator('a.workspace-conversation')).toHaveCount(20)
+    await expect(marker).toHaveAttribute('data-state', 'completed')
+    await state.link('分页会话011').click()
+    await expect(page.locator('.agent-answer')).toContainText('分页会话011的完整回复')
+    await expect(marker).toHaveAttribute('data-state', 'idle')
+    await page.reload()
+    await expect(state.link('分页会话011')).toBeVisible()
+    await expect(marker).toHaveAttribute('data-state', 'idle')
+    expect(state.errors).toEqual([])
+  })
+
+  test('reveals directly opened later-page items and newly created items without fetching every page', async ({
+    page,
+  }) => {
+    const state = await paginationFixtures(page)
+    await page.goto('/projects/27?id=270041')
+    await expect(page.getByRole('heading', { name: '后页直达会话', exact: true })).toBeVisible()
+    await expect(state.link('后页项目25')).toBeVisible()
+    await expect(state.link('后页直达会话')).toBeVisible()
+    await expect(page.locator('.agent-answer')).toContainText('后页直达会话的完整回复')
+    expect(
+      state.reads.every(
+        (read) => read.page === 1 && read.size === (read.kind === 'projects' ? 20 : 10),
+      ),
+    ).toBe(true)
+    await state.sidebar.getByRole('button', { name: '在 后页项目25 新建会话', exact: true }).click()
+    await page
+      .getByRole('dialog')
+      .getByPlaceholder('例如：修复订单导出问题')
+      .fill('分页中新建的会话')
+    await page.getByRole('button', { name: '创建并连接', exact: true }).click()
+    await expect(page).toHaveURL(/\/projects\/27\?id=900001$/)
+    await expect(state.link('分页中新建的会话')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '分页中新建的会话', exact: true })).toBeVisible()
+    await page.reload()
+    await expect(state.link('后页项目25')).toBeVisible()
+    await expect(state.link('分页中新建的会话')).toBeVisible()
+
+    await state.sidebar.getByRole('button', { name: '新建项目', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByPlaceholder('例如：订单服务').fill('分页中新建的项目')
+    await dialog.getByRole('combobox', { name: '可执行机器' }).selectOption('1')
+    await dialog.getByRole('button', { name: '创建项目', exact: true }).click()
+    await expect(state.link('分页中新建的项目')).toBeVisible()
+    expect(
+      state.reads.every(
+        (read) => read.page === 1 && read.size === (read.kind === 'projects' ? 20 : 10),
+      ),
+    ).toBe(true)
+    expect(state.errors).toEqual([])
+  })
+
+  test('project list searches and loads later pages independently of the sidebar', async ({
+    page,
+  }) => {
+    const state = await paginationFixtures(page)
+    await page.goto('/projects')
+    const projectList = page.locator('.project-page')
+    await expect(projectList.locator('.project-link')).toHaveCount(20)
+    await projectList.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(projectList.locator('.project-link')).toHaveCount(25)
+    await expect(projectList.getByRole('button', { name: '后页项目25', exact: true })).toBeVisible()
+    await projectList.getByPlaceholder('搜索项目、设备或目录').fill('后页项目25')
+    await projectList.getByPlaceholder('搜索项目、设备或目录').press('Enter')
+    await expect(projectList.locator('.project-link')).toHaveCount(1)
+    await expect(projectList.getByRole('button', { name: '后页项目25', exact: true })).toBeVisible()
+    await expect(state.sidebar.locator('.workspace-project')).toHaveCount(20)
+    expect(state.reads.every((read) => read.size === (read.kind === 'projects' ? 20 : 10))).toBe(
+      true,
+    )
+    expect(state.errors).toEqual([])
+  })
+
+  test('expert project picker searches and enables a project beyond its first page', async ({
+    page,
+  }) => {
+    const state = await paginationFixtures(page)
+    const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+    const expert = {
+      id: 10,
+      name: '分页专家',
+      description: '分页选择器验证',
+      publishedVersionId: 100,
+    }
+    let binding: Record<string, unknown> | null = null
+    await page.route('**/api/v1/expert-market**', (route) =>
+      route.fulfill({ json: response([expert]) }),
+    )
+    await page.route('**/projects/27/experts', (route) => {
+      if (route.request().method() === 'POST') binding = route.request().postDataJSON()
+      return route.fulfill({
+        json: response({
+          projectRevision: binding ? 1 : 0,
+          experts: binding
+            ? [
+                {
+                  expertId: 10,
+                  expertVersionId: 100,
+                  versionNo: 1,
+                  name: expert.name,
+                  available: true,
+                },
+              ]
+            : [],
+        }),
+      })
+    })
+    await page.goto('/expert-market')
+    await page.getByRole('button', { name: '启用到项目', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    const selection = dialog.getByRole('combobox')
+    await expect(selection.locator('option:not([disabled])')).toHaveCount(20)
+    await dialog.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(selection.locator('option:not([disabled])')).toHaveCount(25)
+    await dialog.getByPlaceholder('搜索项目', { exact: true }).fill('后页项目25')
+    await dialog.getByPlaceholder('搜索项目', { exact: true }).press('Enter')
+    await expect(selection.locator('option:not([disabled])')).toHaveCount(1)
+    await selection.selectOption('27')
+    await dialog.getByRole('button', { name: '启用 / 升级', exact: true }).click()
+    await expect(page).toHaveURL(/\/projects\/27\/experts$/)
+    expect(binding).toEqual({ expertVersionId: 100, projectRevision: 0 })
+    expect(state.reads.every((read) => read.size === (read.kind === 'projects' ? 20 : 10))).toBe(
+      true,
+    )
+    expect(state.errors).toEqual([])
+  })
+
+  test('Skill project picker searches and deploys to a project beyond its first page', async ({
+    page,
+  }) => {
+    const state = await paginationFixtures(page)
+    let deployment: Record<string, unknown> | null = null
+    await page.route('**/api/v1/skill-deployments', (route) => {
+      if (route.request().method() === 'POST') deployment = route.request().postDataJSON()
+      const result = {
+        id: 99,
+        skillName: 'code-review',
+        version: '1.0',
+        deviceName: '测试设备',
+        projectName: '后页项目25',
+        scopeType: 'PROJECT',
+        installStatus: 'INSTALLED',
+      }
+      return route.fulfill({
+        json: {
+          status: 'success',
+          code: 200,
+          info: '',
+          data: route.request().method() === 'POST' ? result : deployment ? [result] : [],
+        },
+      })
+    })
+    await page.goto('/skills')
+    await page.getByRole('button', { name: '下发 Skill', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('combobox', { name: '作用域', exact: true }).selectOption('PROJECT')
+    const selection = dialog.getByRole('combobox', {
+      name: '选择工作区已就绪且 Agent 在线的项目',
+      exact: true,
+    })
+    await expect(selection.locator('option:not([disabled])')).toHaveCount(20)
+    await dialog.getByRole('button', { name: '加载更多项目', exact: true }).click()
+    await expect(selection.locator('option:not([disabled])')).toHaveCount(25)
+    await dialog.getByPlaceholder('搜索目标项目').fill('后页项目25')
+    await dialog.getByPlaceholder('搜索目标项目').press('Enter')
+    await expect(selection.locator('option:not([disabled])')).toHaveCount(1)
+    await selection.selectOption('27')
+    await dialog.getByRole('combobox', { name: '选择已激活版本', exact: true }).selectOption('6')
+    await dialog.getByRole('button', { name: '下发到项目', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    expect(deployment).toEqual({ scopeType: 'PROJECT', targetId: 27, versionId: 6 })
+    expect(state.reads.every((read) => read.size === (read.kind === 'projects' ? 20 : 10))).toBe(
+      true,
+    )
+    expect(state.errors).toEqual([])
+  })
 })

@@ -40,6 +40,25 @@
             {{ `${project.projectName} · ${project.deviceName}` }}
           </option>
         </AppSelect>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <AppInput
+            v-model="projectSearch"
+            maxlength="200"
+            placeholder="搜索目标项目"
+            @keyup.enter="searchProjects"
+          />
+          <AppButton :loading="projectQuery.loading.value" @click="searchProjects">搜索</AppButton>
+          <AppButton
+            v-if="projectQuery.hasMore.value"
+            :loading="projectQuery.loading.value"
+            @click="projectQuery.loadMore()"
+            >加载更多项目</AppButton
+          >
+        </div>
+        <p v-if="projectQuery.error.value" role="alert" class="text-destructive">
+          {{ projectQuery.error.value }}
+          <AppButton link @click="projectQuery.retry()">重试</AppButton>
+        </p>
       </FormField>
     </AppForm>
     <AppAlert
@@ -73,11 +92,12 @@ import AppForm from '@/components/common/AppForm.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import AppInput from '@/components/common/AppInput.vue'
 import type { FormRules, FormHandle } from '@/components/common/form'
 import { computed, reactive, ref, watch } from 'vue'
 import { deploySkill } from '../../api/agent'
 import { useAgentStore } from '../../stores/agent'
-import { useProjectStore } from '../../stores/project'
+import { useProjectQuery } from '@/composables/useProjectQuery'
 const props = defineProps<{
   modelValue: boolean
   skills: Skill[]
@@ -88,7 +108,12 @@ const emit = defineEmits<{
   deployed: [value: DeploymentResult]
 }>()
 const agentStore = useAgentStore()
-const projectStore = useProjectStore()
+const projectQuery = useProjectQuery()
+const projectSearch = ref('')
+function searchProjects() {
+  form.projectId = null
+  void projectQuery.search(projectSearch.value)
+}
 const formRef = ref<FormHandle | null>(null)
 const submitting = ref(false)
 const form = reactive<{
@@ -118,7 +143,7 @@ const rules: FormRules = {
 }
 const onlineDevices = computed(() => agentStore.devices.filter((item) => item.status === 'ONLINE'))
 const onlineProjects = computed(() =>
-  projectStore.projects.filter(
+  projectQuery.items.value.filter(
     (item) =>
       item.status === 'ACTIVE' &&
       item.deviceStatus === 'ONLINE' &&
@@ -136,15 +161,17 @@ function activeVersions(skill: Skill) {
 }
 watch(
   () => props.modelValue,
-  async (visible) => {
+  async (visible, _previous, cleanup) => {
     if (!visible) return
+    cleanup(projectQuery.cancel)
+    projectSearch.value = ''
     Object.assign(form, {
       scopeType: 'GLOBAL',
       deviceIds: [],
       projectId: null,
       versionId: props.initialVersionId,
     })
-    await Promise.all([agentStore.loadDevices(), projectStore.loadProjects()])
+    await Promise.all([agentStore.loadDevices(), projectQuery.search()])
   },
 )
 watch(

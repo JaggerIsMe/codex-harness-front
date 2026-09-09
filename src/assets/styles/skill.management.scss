@@ -22,7 +22,7 @@
   }
   .version-panel {
     padding: 14px 22px 20px 66px;
-    background: #f8fafc;
+    background: var(--surface-subtle);
   }
   .version-panel__header {
     display: flex;
@@ -31,7 +31,7 @@
     margin-bottom: 10px;
   }
   code {
-    color: #334155;
+    color: var(--foreground);
     font-size: 12px;
   }
 }

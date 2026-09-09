@@ -13,9 +13,9 @@
   padding: 36px 42px;
   overflow: hidden;
   border-radius: 18px;
-  color: #262626;
-  background: #fafafa;
-  border: 1px solid #ededed;
+  color: var(--foreground);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
 }
 .welcome-card h2 {
   margin: 10px 0 10px;
@@ -25,7 +25,7 @@
 .welcome-card p {
   max-width: 640px;
   margin: 0;
-  color: #777777;
+  color: var(--muted-foreground);
   font-size: 14px;
   line-height: 1.8;
 }
@@ -44,7 +44,7 @@
   padding: 24px;
   border: 1px solid $border-color;
   border-radius: 14px;
-  background: #fff;
+  background: var(--background);
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease;
@@ -63,20 +63,20 @@
   font-size: 21px;
 }
 .metric-card__icon--green {
-  color: #555555;
-  background: #f5f5f5;
+  color: var(--foreground);
+  background: var(--muted);
 }
 .metric-card__icon--blue {
-  color: #555555;
-  background: #f5f5f5;
+  color: var(--foreground);
+  background: var(--muted);
 }
 .metric-card__icon--purple {
-  color: #555555;
-  background: #f5f5f5;
+  color: var(--foreground);
+  background: var(--muted);
 }
 .metric-card__icon--orange {
-  color: #555555;
-  background: #f5f5f5;
+  color: var(--foreground);
+  background: var(--muted);
 }
 .metric-card div:last-child {
   display: grid;
@@ -98,14 +98,14 @@
 .metric-card small {
   grid-column: 1;
   margin-top: 7px;
-  color: #a2a9b8;
+  color: var(--subtle-foreground);
   font-size: 10px;
 }
 .setup-card {
   padding: 30px 32px;
   border: 1px solid $border-color;
   border-radius: 16px;
-  background: #fff;
+  background: var(--background);
 }
 .setup-card__header {
   display: flex;
@@ -127,7 +127,7 @@
   gap: 15px;
   padding: 20px;
   border-radius: 12px;
-  background: #fafafa;
+  background: var(--surface-subtle);
 }
 .setup-step__index {
   color: $brand-primary;

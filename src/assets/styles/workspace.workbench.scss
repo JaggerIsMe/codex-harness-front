@@ -31,7 +31,7 @@
   display: flex;
   flex-shrink: 0;
   gap: 4px;
-  border-bottom: 1px solid var(--color-border, #e5e5e5);
+  border-bottom: 1px solid var(--border, #e5e5e5);
   padding: 4px 8px;
   button {
     padding: 6px 14px;
@@ -39,7 +39,7 @@
     font-size: 13px;
   }
   button[aria-pressed='true'] {
-    background: var(--color-muted, #f5f5f5);
+    background: var(--muted, #f5f5f5);
     color: var(--primary);
   }
 }
@@ -48,7 +48,7 @@
   flex: 0 0 6px;
   cursor: col-resize;
   touch-action: none;
-  background: var(--color-muted, #f5f5f5);
+  background: var(--muted, #f5f5f5);
   user-select: none;
   &:hover,
   &:focus-visible {
@@ -58,7 +58,7 @@
 }
 
 .workspace-tabs button:focus-visible {
-  outline: 2px solid var(--color-ring, #212121);
+  outline: 2px solid var(--ring, #212121);
 }
 @container workspace-pane (max-width: 620px) {
   .conversation-header {
@@ -72,9 +72,11 @@
   .message-panel {
     padding: 24px 18px;
   }
-  .composer {
+  .composer-shell {
     width: calc(100% - 24px);
-    padding: 12px;
+  }
+  .composer {
+    padding: 8px 12px;
   }
   .composer__footer {
     flex-wrap: wrap;

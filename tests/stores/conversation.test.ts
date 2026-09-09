@@ -3,7 +3,22 @@ import { createPinia, setActivePinia, disposePinia } from 'pinia'
 import { useConversationStore } from '@/stores/conversation'
 import { useAgentStore } from '@/stores/agent'
 import * as api from '@/api/conversation'
-import type { ApiResponse, Conversation, RealtimeEvent } from '@/types/domain'
+import type {
+  ApiResponse,
+  Conversation,
+  Message,
+  MessageState,
+  RealtimeEvent,
+  Turn,
+} from '@/types/domain'
+
+const navigation = vi.hoisted(() => ({
+  upsert: vi.fn(),
+  recordTurn: vi.fn(),
+  markIssue: vi.fn(),
+  clearIssue: vi.fn(),
+}))
+vi.mock('@/stores/navigation', () => ({ useNavigationStore: () => navigation }))
 
 vi.mock('@/api/conversation', () => ({
   getConversations: vi.fn(),
@@ -35,6 +50,20 @@ const conversation: Conversation = {
   status: 'ACTIVE',
   codexThreadId: 'thread',
 }
+
+function snapshot(messages: Message[] = [], overrides: Partial<MessageState> = {}) {
+  return result<MessageState>({
+    messages,
+    turnId: 7,
+    cursor: 0,
+    hasMore: false,
+    degraded: false,
+    resetRequired: false,
+    updates: [],
+    ...overrides,
+  })
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   pinia = createPinia()
@@ -183,4 +212,209 @@ it('does not duplicate a replacement snapshot or allow stale deltas to overwrite
   expect(store.messages).toHaveLength(1)
   expect(store.messages[0].content).toBe('final')
   expect(store.messages[0].streaming).toBe(false)
+})
+
+it('records the opened Conversation and its Turn without clearing global state on departure', async () => {
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.upsert).toHaveBeenCalledWith(conversation)
+  expect(navigation.recordTurn).toHaveBeenCalledWith(4, { id: 7, status: 'RUNNING' })
+  expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'message', 7)
+
+  navigation.clearIssue.mockClear()
+  store.clearCurrent()
+  expect(navigation.clearIssue).not.toHaveBeenCalled()
+})
+
+it('records a newly started Turn for the originating Conversation after switching away', async () => {
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  let resolveTurn!: (value: ApiResponse<Turn>) => void
+  vi.mocked(api.startTurn).mockImplementationOnce(
+    () => new Promise((resolve) => (resolveTurn = resolve)),
+  )
+  const starting = store.startNewTurn({ message: 'Continue' })
+  expect(navigation.upsert).toHaveBeenLastCalledWith(conversation)
+  expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'send')
+
+  vi.mocked(api.getConversation).mockResolvedValueOnce(result({ ...conversation, id: 5 }))
+  await store.openConversation(3, 5)
+  const turn: Turn = { id: 8, conversationId: 4, status: 'CREATED' }
+  resolveTurn(result(turn))
+  await starting
+
+  expect(navigation.recordTurn).toHaveBeenCalledWith(4, turn)
+  expect(store.currentConversation?.id).toBe(5)
+  expect(store.currentTurn).toBeNull()
+  expect(store.sending).toBe(false)
+})
+
+it('reports sending failure on the originating Conversation and rethrows after switching away', async () => {
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  let rejectTurn!: (error: Error) => void
+  vi.mocked(api.startTurn).mockImplementationOnce(
+    () => new Promise((_resolve, reject) => (rejectTurn = reject)),
+  )
+  const failure = new Error('Device 当前不可用')
+  const starting = store.startNewTurn({ message: 'Continue' })
+  const rejection = expect(starting).rejects.toBe(failure)
+  vi.mocked(api.getConversation).mockResolvedValueOnce(result({ ...conversation, id: 5 }))
+  await store.openConversation(3, 5)
+  rejectTurn(failure)
+  await rejection
+
+  expect(navigation.markIssue).toHaveBeenCalledWith(4, failure.message, 'send')
+  expect(store.currentConversation?.id).toBe(5)
+  expect(store.sending).toBe(false)
+})
+
+it('clears a previous send issue before retrying and records the accepted Turn', async () => {
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  const failure = new Error('发送失败')
+  vi.mocked(api.startTurn).mockRejectedValueOnce(failure)
+  await expect(store.startNewTurn({ message: 'Continue' })).rejects.toBe(failure)
+  expect(navigation.markIssue).toHaveBeenCalledWith(4, '发送失败', 'send')
+
+  const turn: Turn = { id: 8, status: 'CREATED' }
+  vi.mocked(api.startTurn).mockImplementationOnce(async () => {
+    expect(navigation.clearIssue).toHaveBeenLastCalledWith(4, 'send')
+    return result(turn)
+  })
+  await store.startNewTurn({ message: 'Continue' })
+  expect(navigation.recordTurn).toHaveBeenCalledWith(4, turn)
+})
+
+it('marks degraded snapshots as an issue and clears it after healthy recovery', async () => {
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(snapshot([], { degraded: true }))
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.markIssue).toHaveBeenCalledWith(4, store.streamWarning, 'message', 7)
+  expect(navigation.clearIssue).not.toHaveBeenCalledWith(4, 'message', 7)
+
+  await store.refreshCurrent()
+  expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'message', 7)
+  expect(store.streamWarning).toBe('')
+})
+
+it('reports only incomplete assistant output in the latest Turn', async () => {
+  const incomplete: Message = {
+    ...update(1, 'partial').payload!.patches![0].message,
+    status: 'INCOMPLETE',
+  }
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(snapshot([incomplete]))
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.markIssue).toHaveBeenCalledWith(
+    4,
+    expect.stringContaining('不完整'),
+    'message',
+    7,
+  )
+
+  navigation.markIssue.mockClear()
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(
+    snapshot([
+      { ...incomplete, turnId: 6 },
+      { ...incomplete, id: 11, role: 'USER' },
+      { ...incomplete, id: 12, status: 'COMPLETED' },
+    ]),
+  )
+  await store.refreshCurrent()
+  expect(navigation.markIssue).not.toHaveBeenCalled()
+  expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'message', 7)
+})
+
+it('uses latest Turn metadata for snapshots when there is no active Turn', async () => {
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  vi.mocked(api.getConversation).mockResolvedValue(
+    result({ ...conversation, latestTurnId: 7, latestTurnStatus: 'COMPLETED' }),
+  )
+  vi.mocked(api.getConversationMessageState).mockResolvedValue(
+    snapshot([{ ...update(1, 'partial').payload!.patches![0].message, status: 'INCOMPLETE' }], {
+      turnId: null,
+    }),
+  )
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.markIssue).toHaveBeenCalledWith(
+    4,
+    expect.stringContaining('不完整'),
+    'message',
+    7,
+  )
+  expect(navigation.recordTurn).toHaveBeenCalledWith(4, { id: 7, status: 'COMPLETED' })
+})
+
+it('does not treat an intentionally interrupted latest Turn as incomplete output', async () => {
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  vi.mocked(api.getConversation).mockResolvedValue(
+    result({ ...conversation, latestTurnId: 7, latestTurnStatus: 'INTERRUPTED' }),
+  )
+  vi.mocked(api.getConversationMessageState).mockResolvedValue(
+    snapshot([{ ...update(1, 'partial').payload!.patches![0].message, status: 'INCOMPLETE' }]),
+  )
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.markIssue).not.toHaveBeenCalled()
+  expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'message', 7)
+})
+
+it('reports Conversation loading errors and clears them after a successful retry', async () => {
+  const failure = new Error('会话历史加载失败')
+  vi.mocked(api.getConversation).mockRejectedValueOnce(failure)
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.markIssue).toHaveBeenCalledWith(4, failure.message, 'message')
+
+  await store.openConversation(3, 4)
+  expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'message', 7)
+  expect(store.detailError).toBe('')
+})
+
+it('ignores loading failures from an aborted Conversation after switching', async () => {
+  let rejectOld!: (error: Error) => void
+  vi.mocked(api.getConversation).mockImplementationOnce(
+    () => new Promise((_resolve, reject) => (rejectOld = reject)),
+  )
+  const store = useConversationStore()
+  const opening = store.openConversation(3, 4)
+  vi.mocked(api.getConversation).mockResolvedValueOnce(result({ ...conversation, id: 5 }))
+  await store.openConversation(3, 5)
+  rejectOld(new Error('Canceled request'))
+  await opening
+  expect(navigation.markIssue).not.toHaveBeenCalled()
+  expect(store.currentConversation?.id).toBe(5)
+})
+
+it('does not mark request cancellation as a Conversation or send issue', async () => {
+  const cancellation = new DOMException('Aborted', 'AbortError')
+  vi.mocked(api.getConversation).mockRejectedValueOnce(cancellation)
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.markIssue).not.toHaveBeenCalled()
+
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  await store.openConversation(3, 4)
+  vi.mocked(api.startTurn).mockRejectedValueOnce(cancellation)
+  await expect(store.startNewTurn({ message: 'Continue' })).rejects.toBe(cancellation)
+  expect(navigation.markIssue).not.toHaveBeenCalled()
+})
+
+it('explicitly scopes empty snapshots to no Turn instead of changing a newer Turn issue', async () => {
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(snapshot([], { turnId: null }))
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(navigation.clearIssue).toHaveBeenCalledWith(4, 'message', null)
+
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(
+    snapshot([], { turnId: null, degraded: true }),
+  )
+  await store.refreshCurrent()
+  expect(navigation.markIssue).toHaveBeenCalledWith(4, store.streamWarning, 'message', null)
 })

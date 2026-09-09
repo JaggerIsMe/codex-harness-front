@@ -15,7 +15,7 @@
 }
 .project-toolbar p {
   margin: 0;
-  color: #64748b;
+  color: var(--muted-foreground);
 }
 .project-search {
   width: 100%;
@@ -33,7 +33,7 @@
 .project-page small {
   display: block;
   margin-top: 4px;
-  color: #64748b;
+  color: var(--muted-foreground);
 }
 .isolation-alert {
   margin-bottom: 18px;
@@ -42,6 +42,6 @@
   float: right;
   max-width: 300px;
   overflow: hidden;
-  color: #64748b;
+  color: var(--muted-foreground);
   text-overflow: ellipsis;
 }

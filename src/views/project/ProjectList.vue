@@ -12,6 +12,7 @@
       <div>
         <AppInput
           v-model="keywordInput"
+          maxlength="200"
           clearable
           placeholder="搜索项目、设备或目录"
           @keyup.enter="handleSearch"
@@ -19,8 +20,8 @@
         />
       </div>
     </div>
-    <p v-if="projectStore.error" role="alert" class="text-sm text-destructive">
-      {{ projectStore.error }}
+    <p v-if="queryError" role="alert" class="text-sm text-destructive">
+      {{ queryError }} <AppButton link @click="query.retry()">重试</AppButton>
     </p>
     <Table
       ><TableHeader
@@ -67,6 +68,12 @@
         ></TableBody
       ></Table
     >
+    <div class="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+      <span>共 {{ total }} 个项目</span>
+      <AppButton v-if="hasMore" :loading="loading" @click="query.loadMore()"
+        >加载更多项目</AppButton
+      >
+    </div>
     <CreateProjectDialog v-model="createVisible" @created="open" />
   </section>
 </template>
@@ -84,48 +91,55 @@ import {
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from 'lucide-vue-next'
-import { useProjectStore } from '../../stores/project'
+import { useProjectQuery } from '@/composables/useProjectQuery'
+import { getProject } from '@/api/project'
 import CreateProjectDialog from '../../components/project/CreateProjectDialog.vue'
 
 const router = useRouter()
-const projectStore = useProjectStore()
-const { projects, loading } = storeToRefs(projectStore)
+const query = useProjectQuery()
+const { items: filteredProjects, loading, error: queryError, total, hasMore } = query
 const createVisible = ref(false)
 const keywordInput = ref('')
-const keyword = ref('')
-const filteredProjects = computed(() => {
-  if (!keyword.value) return projects.value
-  return projects.value.filter((item) =>
-    [item.projectName, item.deviceName, item.deviceCode, item.workspaceName, item.rootPath].some(
-      (value) =>
-        String(value || '')
-          .toLowerCase()
-          .includes(keyword.value),
-    ),
-  )
-})
 function handleSearch() {
-  keyword.value = keywordInput.value.trim().toLowerCase()
+  void query.search(keywordInput.value)
 }
 function open(project: Project) {
   router.push({ name: 'project-detail', params: { projectId: project.id } })
 }
 let timer: ReturnType<typeof setInterval> | undefined
+const preparationController = new AbortController()
+const preparing = new Set<number>()
 onMounted(() => {
-  void projectStore.loadProjects()
+  void query.search()
   timer = setInterval(() => {
-    if (
-      !loading.value &&
-      projects.value.some((project) => project.provisioningStatus === 'PREPARING')
-    )
-      void projectStore.loadProjects()
+    if (loading.value) return
+    for (const project of filteredProjects.value.filter(
+      (item) => item.provisioningStatus === 'PREPARING',
+    )) {
+      if (preparing.has(project.id)) continue
+      preparing.add(project.id)
+      void getProject(project.id, preparationController.signal)
+        .then((result) => {
+          if (preparationController.signal.aborted) return
+          filteredProjects.value = filteredProjects.value.map((item) =>
+            item.id === result.data.id ? result.data : item,
+          )
+        })
+        .catch((cause) => {
+          if (!preparationController.signal.aborted)
+            queryError.value = cause instanceof Error ? cause.message : '项目状态刷新失败'
+        })
+        .finally(() => preparing.delete(project.id))
+    }
   }, 3000)
 })
-onBeforeUnmount(() => clearInterval(timer))
+onBeforeUnmount(() => {
+  clearInterval(timer)
+  preparationController.abort()
+})
 </script>
 
 <style src="../../assets/styles/project.scss"></style>

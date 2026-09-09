@@ -3,7 +3,7 @@
   display: flex;
   height: 100dvh;
   min-height: 0;
-  background: #fff;
+  background: var(--background);
 }
 .app-sidebar {
   display: flex;
@@ -11,8 +11,8 @@
   width: 272px;
   min-height: 0;
   flex-direction: column;
-  background: #fafafa;
-  border-right: 1px solid #ededed;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
 }
 .sidebar-brand {
   display: flex;
@@ -28,7 +28,7 @@
   font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.5px;
-  color: #242424;
+  color: var(--foreground);
 }
 .sidebar-scroll {
   flex: 1;
@@ -44,27 +44,7 @@
 .sidebar-footer {
   flex-shrink: 0;
   padding: 16px 18px;
-  border-top: 1px solid #ececec;
-}
-.sidebar-connection {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #888;
-  font-size: 11px;
-  padding: 0 5px 6px;
-}
-.connection-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #a3a3a3;
-}
-.connection-dot.connected {
-  background: #659477;
-}
-.connection-dot.connecting {
-  background: #c39c56;
+  border-top: 1px solid var(--border);
 }
 .sidebar-account {
   display: flex;
@@ -74,13 +54,19 @@
   font-size: 13px;
   padding-left: 5px;
 }
+.sidebar-account-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+}
 .app-main {
   flex: 1;
   min-width: 0;
   min-height: 0;
   padding: 40px clamp(20px, 3vw, 48px);
   overflow: auto;
-  background: #fff;
+  background: var(--background);
 }
 .app-main > :first-child {
   width: 100%;
@@ -100,11 +86,19 @@
   flex-direction: column;
   gap: 18px;
 }
-.is-collapsed .sidebar-footer {
-  padding: 16px;
+.is-collapsed:not(.is-mobile-open) .sidebar-footer {
+  padding: 16px 4px;
 }
-.is-collapsed .sidebar-account {
+.is-collapsed:not(.is-mobile-open) .sidebar-account {
   padding: 0;
+  justify-content: center;
+}
+.is-collapsed:not(.is-mobile-open) .sidebar-account-actions {
+  gap: 2px;
+}
+.is-collapsed:not(.is-mobile-open) .sidebar-account-actions > * {
+  width: 28px;
+  padding-inline: 6px;
 }
 .mobile-menu-trigger,
 .sidebar-backdrop {
@@ -140,8 +134,8 @@
     top: 14px;
     left: 14px;
     z-index: 30;
-    background: #fff;
-    border: 1px solid #ededed;
+    background: var(--background);
+    border: 1px solid var(--border);
   }
   .is-mobile-open .mobile-menu-trigger {
     visibility: hidden;

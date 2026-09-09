@@ -109,6 +109,10 @@ export interface Conversation {
   title: string
   status: string
   codexThreadId: string
+  latestTurnId?: Id | null
+  latestTurnStatus?: string | null
+  latestTurnFailureMessage?: string | null
+  latestTurnHasIncompleteMessage?: boolean
 }
 export interface Turn {
   preparationPhase?: string | null
@@ -312,6 +316,9 @@ export interface RealtimeEvent {
     content?: string
     details?: Json
     commandType?: string
+    errorCode?: string
+    message?: string
+    reason?: string
     cursor?: number
     patches?: MessagePatch[]
   }

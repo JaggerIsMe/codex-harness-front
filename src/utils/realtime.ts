@@ -37,6 +37,9 @@ export function parseRealtimeEvent(frame: string): RealtimeEvent | null {
             itemId: text('itemId'),
             content: text('content'),
             commandType: text('commandType'),
+            errorCode: text('errorCode'),
+            message: text('message'),
+            reason: text('reason'),
             patches,
             cursor: typeof payload.cursor === 'number' ? payload.cursor : undefined,
             details:
