@@ -20,17 +20,25 @@
       <div class="login-card">
         <p class="login-card__eyebrow">WELCOME BACK</p>
         <h2>登录管理中台</h2>
-        <p class="login-card__hint">使用管理员账号继续</p>
+        <p class="login-card__hint">使用已激活的邮箱账号继续</p>
 
         <AppForm ref="formRef" :model="form" :rules="rules" @keyup.enter="submitLogin">
-          <FormField label="用户名" prop="username">
-            <AppInput v-model.trim="form.username" size="large" placeholder="请输入用户名" />
+          <FormField label="邮箱" prop="email">
+            <AppInput
+              v-model.trim="form.email"
+              type="email"
+              autocomplete="email"
+              maxlength="254"
+              size="large"
+              placeholder="请输入邮箱"
+            />
           </FormField>
           <FormField label="密码" prop="password">
             <AppInput
               v-model="form.password"
               size="large"
               type="password"
+              autocomplete="current-password"
               placeholder="请输入密码"
             />
           </FormField>
@@ -47,6 +55,14 @@
             /></span>
           </AppButton>
         </AppForm>
+        <div class="mt-4 flex justify-between gap-4 text-sm">
+          <RouterLink class="text-primary underline-offset-4 hover:underline" to="/forgot-password"
+            >忘记密码</RouterLink
+          >
+          <RouterLink class="text-primary underline-offset-4 hover:underline" to="/activate"
+            >重新发送激活邮件</RouterLink
+          >
+        </div>
 
         <p class="login-card__security">凭证仅用于连接 Harness Server，不会发送到目标设备。</p>
       </div>
@@ -61,22 +77,27 @@ import AppForm from '@/components/common/AppForm.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import type { FormRules, FormHandle } from '@/components/common/form'
-import { reactive, ref } from 'vue'
+import { onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight as Right } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '../../stores/auth'
+import type { Credentials } from '@/types/domain'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref<FormHandle | null>(null)
 const submitting = ref(false)
-const form = reactive({
-  username: '',
+const controller = new AbortController()
+const form = reactive<Credentials>({
+  email: '',
   password: '',
 })
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: '请输入有效邮箱', trigger: 'blur' },
+  ],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
@@ -87,7 +108,12 @@ async function submitLogin() {
 
   submitting.value = true
   try {
-    await authStore.signIn(form)
+    await authStore.signIn(
+      { email: form.email.trim().toLowerCase(), password: form.password },
+      controller.signal,
+    )
+    if (controller.signal.aborted) return
+    form.password = ''
     toast.success('登录成功')
     const redirect =
       typeof route.query.redirect === 'string' &&
@@ -102,6 +128,10 @@ async function submitLogin() {
     submitting.value = false
   }
 }
+onBeforeUnmount(() => {
+  controller.abort()
+  form.password = ''
+})
 </script>
 
 <style scoped src="../../assets/styles/login.scss"></style>

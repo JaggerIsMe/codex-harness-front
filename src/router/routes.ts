@@ -3,6 +3,18 @@ import { getAccessToken } from '../utils/auth.ts'
 import { useAuthStore } from '@/stores/auth'
 const routes = [
   {
+    path: '/activate',
+    name: 'activate',
+    component: () => import('../views/auth/ActivateAccountView.vue'),
+    meta: { publicFlow: true, title: '账号激活' },
+  },
+  {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: () => import('../views/auth/ForgotPasswordView.vue'),
+    meta: { publicFlow: true, title: '找回密码' },
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('../views/login/LoginView.vue'),
@@ -103,6 +115,8 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  document.title = `${to.meta.title || '中台'} · My Harness For Codex`
+  if (to.meta.publicFlow) return true
   const hasToken = Boolean(getAccessToken())
   const auth = useAuthStore()
   if (to.matched.some((record) => record.meta.requiresAuth) && !hasToken) {

@@ -148,11 +148,12 @@ beforeEach(() => {
   setAccessToken('unit-test-token')
   useAuthStore().user = {
     id: 1,
-    username: 'test-user',
+    email: 'tester@example.com',
     displayName: 'Test User',
     roles: [],
     permissions: ['workspace:use'],
     mustChangePassword: false,
+    activated: true,
   }
   backendTurn = null
   nextTurnId = 7

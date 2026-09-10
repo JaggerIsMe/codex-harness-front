@@ -61,3 +61,70 @@ it('normalizes unauthorized failures and clears the token before redirecting', a
   expect(replace).toHaveBeenCalledWith({ name: 'login', query: { redirect: '/projects' } })
   expect(notify).toHaveBeenCalledTimes(1)
 })
+
+it('keeps existing credentials and page state when an anonymous request fails', async () => {
+  localStorage.setItem('harness_access_token', 'another-account')
+  transport = async (config) => {
+    expect(config.headers.Authorization).toBeUndefined()
+    const response: AxiosResponse = {
+      config,
+      status: 401,
+      statusText: 'Unauthorized',
+      headers: {},
+      data: { status: 'error', code: 401, info: '验证码无效' },
+    }
+    throw new AxiosError('Unauthorized', 'ERR_BAD_RESPONSE', config, undefined, response)
+  }
+  await expect(
+    api.request('post', '/auth/password-reset', {}, { anonymous: true, localErrors: true }),
+  ).rejects.toMatchObject({ code: 401 })
+  expect(localStorage.getItem('harness_access_token')).toBe('another-account')
+  expect(replace).not.toHaveBeenCalled()
+  expect(notify).not.toHaveBeenCalled()
+})
+
+it('preserves recovery error details and cooldown from a successful HTTP envelope', async () => {
+  transport = async (config) => ({
+    config,
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    data: {
+      status: 'error',
+      code: 42921,
+      info: '请稍后重试',
+      data: { retryAfterSeconds: 42 },
+    },
+  })
+  await expect(
+    api.request('post', '/auth/activation/resend', {}, { anonymous: true, localErrors: true }),
+  ).rejects.toMatchObject({ code: 42921, retryAfterSeconds: 42 })
+  expect(replace).not.toHaveBeenCalled()
+  expect(notify).not.toHaveBeenCalled()
+})
+
+it('does not retain credentials in normalized API error metadata', async () => {
+  transport = async (config) => ({
+    config,
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    data: {
+      status: 'error',
+      code: 40021,
+      info: '凭据无效',
+      data: null,
+    },
+  })
+  const error = await api
+    .request(
+      'post',
+      '/auth/activate',
+      { token: 'secret-token', newPassword: 'secret-password' },
+      { anonymous: true, localErrors: true },
+    )
+    .catch((cause: unknown) => cause)
+  expect(error).toBeInstanceOf(api.ApiError)
+  expect(JSON.stringify(error)).not.toContain('secret-token')
+  expect(JSON.stringify(error)).not.toContain('secret-password')
+})

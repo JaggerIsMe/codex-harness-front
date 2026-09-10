@@ -39,10 +39,11 @@ async function fixture(page: Page, permissions: string[]) {
     if (path === '/auth/profile')
       data = {
         id: 1,
-        username: 'tester',
+        email: 'tester@example.com',
         displayName: '测试用户',
         roles: ['USER'],
         mustChangePassword: false,
+        activated: true,
         permissions: ['workspace:use', ...permissions],
       }
     else if (path === '/auth/socket-ticket') data = { ticket: 'ticket', expiresInSeconds: 60 }

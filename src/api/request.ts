@@ -7,19 +7,31 @@ const client = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
   timeout: 15000,
 })
+export interface RequestOptions extends AxiosRequestConfig {
+  anonymous?: boolean
+  localErrors?: boolean
+}
 client.interceptors.request.use((config) => {
+  if ((config as RequestOptions).anonymous) {
+    config.headers.delete('Authorization')
+    return config
+  }
   const token = getAccessToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
 export class ApiError extends Error {
+  readonly options: Pick<RequestOptions, 'anonymous' | 'localErrors'>
   constructor(
     message: string,
     readonly code?: number,
+    readonly retryAfterSeconds?: number,
+    options: Pick<RequestOptions, 'anonymous' | 'localErrors'> = {},
   ) {
     super(message)
     this.name = 'ApiError'
+    this.options = { anonymous: options.anonymous, localErrors: options.localErrors }
   }
 }
 
@@ -36,6 +48,8 @@ client.interceptors.response.use(async (response) => {
     throw new ApiError(
       'info' in data ? String(data.info) : '请求失败',
       'code' in data ? Number(data.code) : undefined,
+      readRetryAfter(data),
+      response.config as RequestOptions,
     )
   }
   return response
@@ -61,9 +75,11 @@ client.interceptors.response.use(undefined, async (error: unknown) => {
       body && typeof body === 'object' && 'code' in body
         ? Number(body.code)
         : error.response?.status,
+      readRetryAfter(body) ?? positiveSeconds(error.response?.headers['retry-after']),
+      error.config as RequestOptions,
     )
   }
-  if (normalized.code === 401) {
+  if (!normalized.options.anonymous && normalized.code === 401) {
     removeAccessToken()
     window.dispatchEvent(new Event('harness:unauthorized'))
     if (router.currentRoute.value.name !== 'login') {
@@ -73,9 +89,13 @@ client.interceptors.response.use(undefined, async (error: unknown) => {
       })
     }
   }
-  if (normalized.code === 40301 && router.currentRoute.value.name !== 'password')
+  if (
+    !normalized.options.anonymous &&
+    normalized.code === 40301 &&
+    router.currentRoute.value.name !== 'password'
+  )
     void router.replace({ name: 'password' })
-  toast.error(normalized.message)
+  if (!normalized.options.localErrors) toast.error(normalized.message)
   return Promise.reject(normalized)
 })
 
@@ -83,9 +103,21 @@ export async function request<T>(
   method: Method,
   url: string,
   data?: unknown,
-  config?: AxiosRequestConfig,
+  config?: RequestOptions,
 ): Promise<ApiResponse<T>> {
   return (await client.request<ApiResponse<T>>({ ...config, method, url, data })).data
+}
+
+function positiveSeconds(value: unknown): number | undefined {
+  const seconds = Number(value)
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : undefined
+}
+function readRetryAfter(body: unknown): number | undefined {
+  if (!body || typeof body !== 'object') return undefined
+  const data = 'data' in body ? body.data : undefined
+  return data && typeof data === 'object' && 'retryAfterSeconds' in data
+    ? positiveSeconds(data.retryAfterSeconds)
+    : undefined
 }
 
 export async function downloadSkillVersion(skillId: Id, versionId: Id): Promise<Blob> {

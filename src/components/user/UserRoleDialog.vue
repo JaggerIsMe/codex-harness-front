@@ -1,6 +1,6 @@
 <template>
   <AppDialog :model-value="modelValue" title="分配角色" @update:model-value="close">
-    <p class="mb-4">{{ user?.displayName }}（{{ user?.username }}）</p>
+    <p class="mb-4">{{ user?.displayName }}（{{ user?.email }}）</p>
     <label class="grid gap-2"
       >角色<AppSelect v-model="role"
         ><option value="USER">普通用户</option>

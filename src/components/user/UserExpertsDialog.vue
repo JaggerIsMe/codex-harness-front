@@ -1,6 +1,6 @@
 <template>
   <AppDialog :model-value="modelValue" title="分配专家" @update:model-value="close">
-    <p>{{ user?.displayName }}（{{ user?.username }}）</p>
+    <p>{{ user?.displayName }}（{{ user?.email }}）</p>
     <p class="my-3 text-sm text-muted-foreground">
       用户只能在专家市场和自己的项目中使用已分配的专家。取消分配后，该用户已有会话也不能继续使用对应专家。
     </p>

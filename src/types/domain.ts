@@ -34,25 +34,32 @@ export interface WorkspaceRoot {
 }
 export interface User {
   id: number
-  username: string
+  email: string
   displayName: string
   roles: string[]
   permissions: string[]
   mustChangePassword: boolean
+  activated: boolean
 }
 export interface ManagedUser extends Omit<User, 'permissions'> {
   status: 'ENABLED' | 'DISABLED'
+  activationEmailStatus: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED' | 'CANCELLED' | null
   deviceIds: number[]
   expertIds: number[]
   lastLoginAt?: string
   createdAt?: string
 }
 export interface UserInput {
-  username: string
+  email: string
+  role: 'USER' | 'SYS_ADMIN'
+}
+export interface EmailSendResult {
+  retryAfterSeconds: number
+}
+export interface ActivationDetails {
+  maskedEmail: string
   displayName: string
-  password: string
-  role: string
-  deviceIds: number[]
+  expiresAt: string
 }
 export interface PageResult<T> {
   items: T[]
@@ -175,7 +182,7 @@ export interface ApiResponse<T> {
   data: T
 }
 export interface Credentials {
-  username: string
+  email: string
   password: string
 }
 export interface ProjectInput {

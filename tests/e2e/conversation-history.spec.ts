@@ -88,11 +88,12 @@ async function fixture(page: Page) {
     if (path === '/auth/profile')
       data = {
         id: 1,
-        username: 'tester',
+        email: 'tester@example.com',
         displayName: '测试用户',
         roles: ['USER'],
         permissions: ['workspace:use', 'expert:use', 'expert:read'],
         mustChangePassword: false,
+        activated: true,
       }
     else if (path === '/auth/socket-ticket') data = { ticket: 'test-ticket', expiresInSeconds: 60 }
     else if (path === '/projects') data = { items: [project], total: 1, page: 1, size: 20 }

@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 const member = {
   id: 2,
-  username: 'member',
+  email: 'member@example.com',
   displayName: '普通用户',
   roles: ['USER'],
   permissions: [
@@ -13,11 +13,12 @@ const member = {
     'conversation:create',
   ],
   mustChangePassword: false,
+  activated: true,
 }
 const admin = {
   ...member,
   id: 1,
-  username: 'admin',
+  email: 'admin@example.com',
   roles: ['SYS_ADMIN'],
   permissions: [...member.permissions, 'system:user:manage', 'device:manage', 'skill:manage'],
 }
@@ -98,17 +99,20 @@ test('admin creates a member and grants machines and experts', async ({ page }) 
     let data: unknown
     if (request.method() === 'POST') {
       const body = request.postDataJSON()
+      expect(Object.keys(body).sort()).toEqual(['email', 'role'])
       expect(body.role).toBe('USER')
       users = [
         {
           id: 2,
-          username: body.username,
-          displayName: body.displayName,
+          email: body.email,
+          displayName: 'member',
           roles: ['USER'],
           deviceIds: [],
           expertIds: [],
           status: 'ENABLED',
-          mustChangePassword: true,
+          mustChangePassword: false,
+          activated: false,
+          activationEmailStatus: 'PENDING',
         },
       ]
       data = users[0]
@@ -126,11 +130,12 @@ test('admin creates a member and grants machines and experts', async ({ page }) 
   await page.goto('/users')
   await page.getByRole('button', { name: '新增用户' }).click()
   const editor = page.getByRole('dialog')
-  await editor.getByLabel('用户名', { exact: true }).fill('member')
-  await editor.getByLabel('显示名称').fill('普通用户')
-  await editor.getByLabel('临时密码').fill('Temporary12345')
-  await editor.getByRole('button', { name: '保存', exact: true }).click()
+  await editor.getByLabel('邮箱', { exact: true }).fill('member@example.com')
+  await expect(editor.getByLabel('临时密码')).toHaveCount(0)
+  await editor.getByRole('button', { name: '创建并发送激活邮件', exact: true }).click()
   await expect(editor).toHaveCount(0)
+  await expect(page.getByRole('cell', { name: '待激活', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '重置密码', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '分配机器' }).click()
   const devices = page.getByRole('dialog')
   await devices.getByRole('checkbox', { name: /机器 1/ }).check()

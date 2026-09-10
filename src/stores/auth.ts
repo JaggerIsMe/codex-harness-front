@@ -14,8 +14,9 @@ export const useAuthStore = defineStore('auth', () => {
   )
   let pending: Promise<void> | null = null
   let revision = 0
-  async function signIn(credentials: Credentials) {
-    const result = await login(credentials)
+  async function signIn(credentials: Credentials, signal?: AbortSignal) {
+    const result = await login(credentials, signal)
+    if (signal?.aborted) return
     if (!result.data.accessToken) throw new Error('登录响应中缺少访问令牌')
     revision += 1
     token.value = result.data.accessToken

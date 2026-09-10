@@ -1,6 +1,6 @@
 <template>
   <AppDialog :model-value="modelValue" title="分配可执行机器" @update:model-value="close">
-    <p>{{ user?.displayName }}（{{ user?.username }}）</p>
+    <p>{{ user?.displayName }}（{{ user?.email }}）</p>
     <p class="my-3 text-sm text-muted-foreground">
       可选择多台机器。共用机器上的项目和目录仍各自独占。取消勾选会撤销使用权并请求中断相关运行；历史文件保留。
     </p>

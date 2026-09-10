@@ -75,7 +75,7 @@
       <footer class="sidebar-footer">
         <div class="sidebar-account">
           <span v-if="!collapsed || mobileOpen" class="min-w-0 flex-1 truncate">{{
-            authStore.user?.displayName || authStore.user?.username || '用户'
+            authStore.user?.displayName || authStore.user?.email || '用户'
           }}</span>
           <div class="sidebar-account-actions">
             <ThemeToggle :compact="collapsed && !mobileOpen" />

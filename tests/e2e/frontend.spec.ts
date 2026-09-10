@@ -1260,7 +1260,7 @@ test.describe('Conversation message outline', () => {
 async function fixtures(page: Page, authenticated = true) {
   const profile = {
     id: 1,
-    username: '测试管理员',
+    email: 'tester@example.com',
     displayName: '测试管理员',
     roles: ['SYS_ADMIN'],
     permissions: [
@@ -1273,6 +1273,7 @@ async function fixtures(page: Page, authenticated = true) {
       'expert:use',
     ],
     mustChangePassword: false,
+    activated: true,
   }
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -1392,8 +1393,8 @@ test('login validates required fields and submits using Enter', async ({ page })
   const errors = await fixtures(page, false)
   await page.goto('/login')
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('请输入用户名')
-  await page.getByPlaceholder('请输入用户名').fill('admin')
+  await expect(page.getByRole('alert')).toContainText('请输入邮箱')
+  await page.getByPlaceholder('请输入邮箱').fill('admin@example.com')
   await page.getByPlaceholder('请输入密码').fill('test-password')
   await page.getByPlaceholder('请输入密码').press('Enter')
   await expect(page.getByRole('heading', { name: '欢迎回到 Harness 中台' })).toBeVisible()
