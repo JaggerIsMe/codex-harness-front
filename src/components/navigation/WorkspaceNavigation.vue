@@ -52,6 +52,7 @@
             :title="project.projectName"
             ><Folder class="size-4 shrink-0" /><span>{{ project.projectName }}</span></RouterLink
           >
+          <ProjectActions :project="project" compact />
           <button
             type="button"
             class="sidebar-icon"
@@ -78,48 +79,56 @@
               重试
             </button>
           </p>
-          <RouterLink
+          <div
             v-for="{ conversation, activity } in visibleConversations(project)"
             :key="conversation.id"
-            class="workspace-conversation"
+            class="workspace-conversation-row"
             :class="{
               'is-active':
                 String(route.params.projectId) === String(project.id) &&
                 String(route.query.id) === String(conversation.id),
             }"
-            :to="{
-              name: 'project-detail',
-              params: { projectId: project.id },
-              query: { id: conversation.id },
-            }"
-            :aria-label="conversation.title || `会话 #${conversation.id}`"
-            :aria-describedby="`${statusId}-${conversation.id}`"
-            :title="`${conversation.title || `会话 #${conversation.id}`} · ${activity.label}`"
           >
-            <MessageSquare class="size-3.5 shrink-0" aria-hidden="true" /><span
-              class="workspace-conversation__title"
-              >{{ conversation.title || `会话 #${conversation.id}` }}</span
+            <RouterLink
+              class="workspace-conversation"
+              :to="{
+                name: 'project-detail',
+                params: { projectId: project.id },
+                query: { id: conversation.id },
+              }"
+              :aria-label="conversation.title || `会话 #${conversation.id}`"
+              :aria-describedby="`${statusId}-${conversation.id}`"
+              :title="`${conversation.title || `会话 #${conversation.id}`} · ${activity.label}`"
             >
-            <span
-              class="workspace-conversation__activity"
-              :data-state="activity.state"
-              :title="activity.label"
-            >
-              <LoaderCircle
-                v-if="activity.state === 'running'"
-                class="workspace-conversation__spinner"
-                aria-hidden="true"
-              />
-              <span
-                v-else-if="activity.state === 'completed' || activity.state === 'error'"
-                class="workspace-conversation__dot"
-                aria-hidden="true"
-              ></span>
+              <MessageSquare class="size-3.5 shrink-0" aria-hidden="true" /><span
+                class="workspace-conversation__title"
+                >{{ conversation.title || `会话 #${conversation.id}` }}</span
+              >
               <span :id="`${statusId}-${conversation.id}`" class="sr-only">{{
                 activity.label
               }}</span>
-            </span>
-          </RouterLink>
+            </RouterLink>
+            <div class="workspace-conversation__trailing">
+              <ConversationActions :conversation="conversation" compact />
+              <span
+                v-if="activity.state !== 'idle'"
+                class="workspace-conversation__activity"
+                :data-state="activity.state"
+                :title="activity.label"
+              >
+                <LoaderCircle
+                  v-if="activity.state === 'running'"
+                  class="workspace-conversation__spinner"
+                  aria-hidden="true"
+                />
+                <span
+                  v-else-if="activity.state === 'completed' || activity.state === 'error'"
+                  class="workspace-conversation__dot"
+                  aria-hidden="true"
+                ></span>
+              </span>
+            </div>
+          </div>
           <p v-if="navigation.errorsMore[project.id]" class="sidebar-hint" role="alert">
             {{ navigation.errorsMore[project.id] }}
             <button type="button" class="underline" @click="navigation.loadMore(project.id)">
@@ -206,6 +215,8 @@ import {
 import { useProjectStore } from '@/stores/project'
 import { useNavigationStore } from '@/stores/navigation'
 import { useConversationStore } from '@/stores/conversation'
+import ProjectActions from '@/components/project/ProjectActions.vue'
+import ConversationActions from '@/components/conversation/ConversationActions.vue'
 import type { Id, Project } from '@/types/domain'
 const emit = defineEmits<{ createProject: []; createConversation: [projectId: number] }>()
 const route = useRoute()

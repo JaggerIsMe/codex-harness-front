@@ -36,6 +36,12 @@ vi.mock('@/components/conversation/ChatWorkspace.vue', () => ({
 vi.mock('@/components/conversation/CreateConversationDialog.vue', () => ({
   default: { template: '<div />' },
 }))
+vi.mock('@/components/project/ProjectActions.vue', () => ({
+  default: { template: '<span />' },
+}))
+vi.mock('@/components/conversation/ConversationActions.vue', () => ({
+  default: { template: '<span />' },
+}))
 
 const preparing: Project = {
   id: 9,

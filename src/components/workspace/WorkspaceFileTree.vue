@@ -1,12 +1,20 @@
 <template>
   <ul class="workspace-file-tree" :aria-label="path || '工作区目录'">
-    <li v-for="file in directory?.entries || []" :key="file.path">
+    <li v-for="file in entries" :key="file.path">
       <div
         class="workspace-file-row"
         :class="{
           'workspace-file-row--selected': selected === file.path || previewPath === file.path,
         }"
       >
+        <input
+          v-if="multiSelect && file.type === 'FILE'"
+          type="checkbox"
+          class="size-4 shrink-0 accent-primary"
+          :aria-label="`选择 ${file.path}`"
+          :checked="selectedPaths?.includes(file.path)"
+          @change="emit('select', file)"
+        />
         <button
           v-if="file.type === 'DIRECTORY'"
           type="button"
@@ -37,15 +45,7 @@
           <File :size="16" /><span>{{ file.name }}</span>
         </span>
         <button
-          type="button"
-          :aria-label="`复制 ${file.name} 相对路径`"
-          title="复制相对路径"
-          @click="emit('copy', file.path)"
-        >
-          <Copy :size="14" />
-        </button>
-        <button
-          v-if="file.type === 'FILE'"
+          v-if="file.type === 'FILE' && !directoriesOnly"
           type="button"
           :disabled="disabled"
           :aria-label="`下载 ${file.name}`"
@@ -54,6 +54,46 @@
         >
           <Download :size="14" />
         </button>
+        <DropdownMenuRoot v-if="file.type !== 'UNAVAILABLE' && !directoriesOnly">
+          <DropdownMenuTrigger as-child
+            ><button type="button" :aria-label="`${file.name} 更多操作`" title="更多操作">
+              <Ellipsis :size="16" /></button
+          ></DropdownMenuTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuContent class="workspace-file-menu" :side-offset="4" align="end">
+              <DropdownMenuItem
+                v-if="file.type === 'FILE'"
+                :disabled="disabled"
+                @select="emit('preview', file)"
+                >预览</DropdownMenuItem
+              >
+              <DropdownMenuItem
+                v-if="file.type === 'FILE'"
+                :disabled="disabled"
+                @select="emit('download', file)"
+                >下载</DropdownMenuItem
+              >
+              <DropdownMenuItem
+                :disabled="!mutationEnabled || !file.entryRevision"
+                @select="emit('rename', file)"
+                >重命名</DropdownMenuItem
+              >
+              <DropdownMenuItem
+                v-if="file.type === 'FILE'"
+                :disabled="!mutationEnabled || !file.entryRevision"
+                @select="emit('move', file)"
+                >移动到</DropdownMenuItem
+              >
+              <DropdownMenuItem
+                :disabled="!mutationEnabled || !file.entryRevision"
+                class="text-destructive"
+                @select="emit('delete', file)"
+                >删除</DropdownMenuItem
+              >
+              <DropdownMenuItem @select="emit('copy', file.path)">复制相对路径</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
         <span v-if="file.type === 'UNAVAILABLE'" class="text-xs text-muted-foreground"
           >不可访问</span
         >
@@ -66,6 +106,14 @@
         :selected="selected"
         :preview-path="previewPath"
         :disabled="disabled"
+        :directories-only="directoriesOnly"
+        :multi-select="multiSelect"
+        :selected-paths="selectedPaths"
+        :mutation-enabled="mutationEnabled"
+        @select="emit('select', $event)"
+        @rename="emit('rename', $event)"
+        @move="emit('move', $event)"
+        @delete="emit('delete', $event)"
         @toggle="emit('toggle', $event)"
         @preview="emit('preview', $event)"
         @download="emit('download', $event)"
@@ -78,7 +126,7 @@
       同步中…
     </li>
     <li
-      v-else-if="directory?.loaded && !directory.entries.length"
+      v-else-if="directory?.loaded && !entries.length"
       class="px-3 py-2 text-xs text-muted-foreground"
     >
       空目录
@@ -104,7 +152,14 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, ChevronRight, Folder, File, Download, Copy } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Folder, File, Download, Ellipsis } from 'lucide-vue-next'
+import {
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuPortal,
+} from 'reka-ui'
 import type { WorkspaceDirectoryState, WorkspaceFileEntry } from '@/types/workspace-file'
 const props = defineProps<{
   path: string
@@ -113,6 +168,10 @@ const props = defineProps<{
   previewPath?: string
   selected: string
   disabled: boolean
+  directoriesOnly?: boolean
+  multiSelect?: boolean
+  selectedPaths?: string[]
+  mutationEnabled?: boolean
 }>()
 const emit = defineEmits<{
   toggle: [path: string]
@@ -121,6 +180,15 @@ const emit = defineEmits<{
   copy: [path: string]
   more: [path: string, cursor: string]
   retry: [path: string]
+  select: [file: WorkspaceFileEntry]
+  rename: [file: WorkspaceFileEntry]
+  move: [file: WorkspaceFileEntry]
+  delete: [file: WorkspaceFileEntry]
 }>()
 const directory = computed(() => props.directories[props.path])
+const entries = computed(() =>
+  (directory.value?.entries || []).filter(
+    (entry) => !props.directoriesOnly || entry.type === 'DIRECTORY',
+  ),
+)
 </script>

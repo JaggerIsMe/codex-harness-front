@@ -34,7 +34,6 @@ vi.mock('@/api/agent', () => ({
   getDevices: vi.fn(),
   getDeviceWorkspaceRoots: vi.fn(),
   getDeviceWorkspaces: vi.fn(),
-  createWorkspace: vi.fn(),
 }))
 let pinia: ReturnType<typeof createPinia>
 function result<T>(data: T): ApiResponse<T> {
@@ -420,4 +419,85 @@ it('explicitly scopes empty snapshots to no Turn instead of changing a newer Tur
   )
   await store.refreshCurrent()
   expect(navigation.markIssue).toHaveBeenCalledWith(4, store.streamWarning, 'message', null)
+})
+
+function historyMessage(sequenceNo: number): Message {
+  return {
+    id: sequenceNo,
+    turnId: 7,
+    sequenceNo,
+    role: 'USER',
+    messageType: 'TEXT',
+    content: `Message ${sequenceNo}`,
+    status: 'COMPLETED',
+  }
+}
+
+it('loads one older page at a time while preserving live Messages and stopping at the oldest page', async () => {
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(
+    snapshot([historyMessage(10)], { hasMore: true }),
+  )
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  let resolvePage!: (value: ApiResponse<MessageState>) => void
+  vi.mocked(api.getConversationMessageState).mockImplementationOnce(
+    () => new Promise((resolve) => (resolvePage = resolve)),
+  )
+  const loading = store.loadOlderMessages()
+  expect(store.loadingOlder).toBe(true)
+  expect(api.getConversationMessageState).toHaveBeenLastCalledWith(
+    3,
+    4,
+    expect.any(AbortSignal),
+    10,
+  )
+  const requests = vi.mocked(api.getConversationMessageState).mock.calls.length
+  expect(await store.loadOlderMessages()).toBe(false)
+  expect(api.getConversationMessageState).toHaveBeenCalledTimes(requests)
+  store.messages.push(historyMessage(11))
+  resolvePage(snapshot([historyMessage(5), historyMessage(10)], { hasMore: false }))
+  expect(await loading).toBe(true)
+  expect(store.messages.map((message) => message.id)).toEqual([5, 10, 11])
+  expect(store.loadingOlder).toBe(false)
+  expect(await store.loadOlderMessages()).toBe(false)
+  expect(api.getConversationMessageState).toHaveBeenCalledTimes(requests)
+})
+
+it('keeps history failures local and clears them on retry without losing loaded Messages', async () => {
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(
+    snapshot([historyMessage(10)], { hasMore: true }),
+  )
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  vi.mocked(api.getConversationMessageState).mockRejectedValueOnce(new Error('网络暂不可用'))
+  expect(await store.loadOlderMessages()).toBe(false)
+  expect(store.olderMessagesError).toBe('网络暂不可用')
+  expect(store.detailError).toBe('')
+  expect(store.messages.map((message) => message.id)).toEqual([10])
+  expect(store.loadingOlder).toBe(false)
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(snapshot([historyMessage(5)]))
+  expect(await store.loadOlderMessages()).toBe(true)
+  expect(store.olderMessagesError).toBe('')
+  expect(store.messages.map((message) => message.id)).toEqual([5, 10])
+})
+
+it('aborts a history page when the Conversation closes and ignores its late response', async () => {
+  vi.mocked(api.getConversationMessageState).mockResolvedValueOnce(
+    snapshot([historyMessage(10)], { hasMore: true }),
+  )
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  let resolvePage!: (value: ApiResponse<MessageState>) => void
+  vi.mocked(api.getConversationMessageState).mockImplementationOnce(
+    () => new Promise((resolve) => (resolvePage = resolve)),
+  )
+  const loading = store.loadOlderMessages()
+  const signal = vi.mocked(api.getConversationMessageState).mock.calls.at(-1)![2]!
+  store.clearCurrent()
+  expect(signal.aborted).toBe(true)
+  resolvePage(snapshot([historyMessage(5)]))
+  expect(await loading).toBe(false)
+  expect(store.messages).toEqual([])
+  expect(store.olderMessagesError).toBe('')
+  expect(store.loadingOlder).toBe(false)
 })

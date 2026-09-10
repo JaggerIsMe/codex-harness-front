@@ -5,6 +5,11 @@ import * as api from '@/api/workspace-file'
 import type { Id } from '@/types/domain'
 import type { WorkspaceFileEntry } from '@/types/workspace-file'
 import { ApiError } from '@/api/request'
+import {
+  insideWorkspacePath,
+  mapWorkspacePath,
+  workspaceChangeEvent,
+} from '@/utils/workspaceFileActions'
 
 export function useWorkspaceFiles(pid: Id) {
   const store = useWorkspaceFileStore()
@@ -21,7 +26,8 @@ export function useWorkspaceFiles(pid: Id) {
   const writable = computed(() => root.value.online && root.value.supported && !busy.value)
 
   async function load(path: string, refresh = false, cursor = '') {
-    const key = path + '\n' + cursor
+    const requestEpoch = store.epoch(pid)
+    const key = requestEpoch + '\n' + path + '\n' + cursor
     if (running.has(key) || lifetime.signal.aborted) return
     running.add(key)
     const state = store.directory(pid, path)
@@ -31,7 +37,8 @@ export function useWorkspaceFiles(pid: Id) {
     try {
       let { data } = await api.getWorkspaceDirectory(pid, path, cursor, refresh, lifetime.signal)
       if (lifetime.signal.aborted) return
-      if (!cursor) store.apply(pid, data, '', baseGeneration)
+      if (requestEpoch !== store.epoch(pid)) return
+      if (!cursor) store.apply(pid, data, '', baseGeneration, requestEpoch)
       if (data.online && data.operation && ['QUEUED', 'RUNNING'].includes(data.operation.status)) {
         await api.waitWorkspaceOperation(pid, data.operation.id, lifetime.signal)
         data = (await api.getWorkspaceDirectory(pid, path, cursor, false, lifetime.signal)).data
@@ -39,9 +46,9 @@ export function useWorkspaceFiles(pid: Id) {
       if (lifetime.signal.aborted) return
       if (data.operation?.status === 'FAILED')
         throw new Error(data.operation.error || '目录同步失败')
-      store.apply(pid, data, cursor, baseGeneration)
+      store.apply(pid, data, cursor, baseGeneration, requestEpoch)
     } catch (cause) {
-      if (!lifetime.signal.aborted) {
+      if (!lifetime.signal.aborted && requestEpoch === store.epoch(pid)) {
         state.error = cause instanceof Error ? cause.message : '目录加载失败'
         if (cause instanceof ApiError && [401, 403, 404].includes(cause.code || 0)) {
           store.projects[String(pid)] = {}
@@ -50,7 +57,7 @@ export function useWorkspaceFiles(pid: Id) {
         }
       }
     } finally {
-      state.loading = false
+      if (requestEpoch === store.epoch(pid)) state.loading = false
       running.delete(key)
     }
   }
@@ -151,16 +158,41 @@ export function useWorkspaceFiles(pid: Id) {
       if (
         event?.type === 'WORKSPACE_FILES_CHANGED' &&
         String(event.payload?.projectId) === String(pid)
-      )
+      ) {
+        const change = workspaceChangeEvent(event.payload)
+        if (change) store.applyChange(pid, change)
         void refresh(false)
+      }
     },
     { flush: 'sync' },
   )
   watch(
     () => agent.connectionState,
     (value) => {
-      if (value === 'CONNECTED') void refresh(true)
+      if (value === 'CONNECTED') {
+        store.invalidate(pid)
+        void refresh(true)
+      }
     },
+  )
+  watch(
+    () => store.lastChange[String(pid)],
+    (change) => {
+      if (!change || change.status !== 'SUCCEEDED') return
+      if (
+        change.kind === 'DELETE_WORKSPACE_ENTRY' &&
+        insideWorkspacePath(selected.value, change.sourcePath)
+      )
+        selected.value = ''
+      else if (change.targetPath)
+        selected.value = mapWorkspacePath(selected.value, change.sourcePath, change.targetPath)
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    () => store.resetEpochs[String(pid)],
+    () => (selected.value = ''),
+    { flush: 'sync' },
   )
   onScopeDispose(() => {
     lifetime.abort()
@@ -184,5 +216,6 @@ export function useWorkspaceFiles(pid: Id) {
     upload,
     createDirectory,
     download,
+    signal: lifetime.signal,
   }
 }

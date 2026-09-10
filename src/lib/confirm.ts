@@ -2,12 +2,13 @@ import { shallowRef } from 'vue'
 export const confirmation = shallowRef<{
   title: string
   message: string
+  warning?: string
   resolve: (value: boolean) => void
 } | null>(null)
-export function confirmAction(message: string, title: string): Promise<boolean> {
+export function confirmAction(message: string, title: string, warning?: string): Promise<boolean> {
   if (confirmation.value) return Promise.resolve(false)
   return new Promise((resolve) => {
-    confirmation.value = { title, message, resolve }
+    confirmation.value = { title, message, warning, resolve }
   })
 }
 export function finishConfirmation(value: boolean) {

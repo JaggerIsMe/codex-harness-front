@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { shallowMount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import ChatWorkspace from '@/components/conversation/ChatWorkspace.vue'
@@ -246,3 +246,124 @@ it('acknowledges a read error for the displayed running Turn at the bottom', asy
   expect(store.currentTurn.status).toBe('RUNNING')
   expect(navigation.unreadKey(4)).toBeNull()
 })
+
+async function mountHistoryWorkspace() {
+  // A real scrollable viewport avoids treating jsdom's zero-size layout as an empty page.
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1200)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400)
+  const view = mountWorkspace()
+  await flushPromises()
+  return { view, panel: view.get<HTMLElement>('.message-panel') }
+}
+
+it('loads older Messages only when scrolling to the top and exposes no manual pagination button', async () => {
+  const store = useConversationStore()
+  store.currentConversation = { ...conversation }
+  store.messages = [completedAnswer(7)]
+  store.hasMoreMessages = true
+  const loadOlder = vi.spyOn(store, 'loadOlderMessages').mockResolvedValue(false)
+  const { view, panel } = await mountHistoryWorkspace()
+
+  expect(loadOlder).not.toHaveBeenCalled()
+  expect(
+    view
+      .findAll('button, app-button-stub')
+      .some((button) => button.text().includes('加载更早消息')),
+  ).toBe(false)
+  expect(view.find('[aria-label="在导航中加载更早消息"]').exists()).toBe(false)
+  panel.element.scrollTop = 300
+  await panel.trigger('scroll')
+  expect(loadOlder).not.toHaveBeenCalled()
+
+  panel.element.scrollTop = 0
+  await panel.trigger('scroll')
+  await flushPromises()
+  expect(loadOlder).toHaveBeenCalledTimes(1)
+})
+
+it('announces older Message loading and avoids requesting a second page while one is pending', async () => {
+  const store = useConversationStore()
+  store.currentConversation = { ...conversation }
+  store.messages = [completedAnswer(7)]
+  store.hasMoreMessages = true
+  let finish!: (loaded: boolean) => void
+  const loadOlder = vi.spyOn(store, 'loadOlderMessages').mockImplementation(() => {
+    store.loadingOlder = true
+    return new Promise<boolean>((resolve) => (finish = resolve))
+  })
+  const { panel } = await mountHistoryWorkspace()
+  panel.element.scrollTop = 0
+  await panel.trigger('scroll')
+
+  expect(loadOlder).toHaveBeenCalledTimes(1)
+  expect(panel.attributes('aria-busy')).toBe('true')
+  expect(panel.get('[role="status"]').text()).toBe('正在加载更早消息…')
+  panel.element.scrollTop = 200
+  await panel.trigger('scroll')
+  panel.element.scrollTop = 0
+  await panel.trigger('scroll')
+  expect(loadOlder).toHaveBeenCalledTimes(1)
+
+  store.loadingOlder = false
+  finish(false)
+  await flushPromises()
+  expect(panel.attributes('aria-busy')).toBe('false')
+  expect(panel.find('[role="status"]').exists()).toBe(false)
+})
+
+it('shows history loading failure separately and retries after scrolling away from and back to the top', async () => {
+  const store = useConversationStore()
+  store.currentConversation = { ...conversation }
+  store.messages = [completedAnswer(7)]
+  store.hasMoreMessages = true
+  const loadOlder = vi
+    .spyOn(store, 'loadOlderMessages')
+    .mockImplementationOnce(async () => {
+      store.olderMessagesError = '历史消息加载失败'
+      return false
+    })
+    .mockImplementationOnce(async () => {
+      store.olderMessagesError = ''
+      store.hasMoreMessages = false
+      return false
+    })
+  const { panel } = await mountHistoryWorkspace()
+  panel.element.scrollTop = 0
+  await panel.trigger('scroll')
+  await flushPromises()
+
+  const error = panel.get('[role="alert"]')
+  expect(error.text()).toContain('历史消息加载失败')
+  expect(error.text()).toContain('滚动')
+  expect(error.text()).toContain('重试')
+  expect(store.messages).toHaveLength(1)
+  expect(store.detailError).toBe('')
+  await panel.trigger('scroll')
+  expect(loadOlder).toHaveBeenCalledTimes(1)
+
+  panel.element.scrollTop = 200
+  await panel.trigger('scroll')
+  panel.element.scrollTop = 0
+  await panel.trigger('scroll')
+  await flushPromises()
+  expect(loadOlder).toHaveBeenCalledTimes(2)
+  expect(panel.find('[role="alert"]').exists()).toBe(false)
+})
+
+it.each(['loading', 'loadingOlder', 'exhausted'] as const)(
+  'does not request older Messages at the top while history is %s',
+  async (state) => {
+    const store = useConversationStore()
+    store.currentConversation = { ...conversation }
+    store.messages = [completedAnswer(7)]
+    store.hasMoreMessages = state !== 'exhausted'
+    store.loading = state === 'loading'
+    store.loadingOlder = state === 'loadingOlder'
+    const loadOlder = vi.spyOn(store, 'loadOlderMessages').mockResolvedValue(false)
+    const { panel } = await mountHistoryWorkspace()
+    panel.element.scrollTop = 0
+    await panel.trigger('scroll')
+    await flushPromises()
+    expect(loadOlder).not.toHaveBeenCalled()
+  },
+)

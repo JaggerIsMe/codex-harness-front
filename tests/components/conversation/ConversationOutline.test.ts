@@ -101,11 +101,9 @@ it('supports a single tab stop, keyboard previews, Escape and current reading po
   expect(items[1]!.attributes('aria-current')).toBe('location')
 })
 
-it('updates a live preview and exposes older history without adding fake message segments', async () => {
+it('updates a live preview without adding fake message segments', async () => {
   const view = mountOutline()
-  await view.setProps({ hasMore: true })
-  await view.get('[aria-label="在导航中加载更早消息"]').trigger('click')
-  expect(view.emitted('loadOlder')).toHaveLength(1)
+  expect(view.find('[aria-label="在导航中加载更早消息"]').exists()).toBe(false)
   await view.findAll('.conversation-outline__item')[0]!.trigger('mouseenter')
   await view.setProps({
     messages: messages.map((message) =>

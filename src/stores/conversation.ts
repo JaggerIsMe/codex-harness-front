@@ -20,6 +20,7 @@ import {
   getConversation,
   getConversationApprovals,
   getConversationMessageState,
+  getConversationMessages,
   getConversations,
   interruptTurn,
   resolveApproval,
@@ -27,6 +28,7 @@ import {
 } from '../api/conversation.ts'
 import { useAgentStore } from './agent.ts'
 import { useNavigationStore } from './navigation'
+import { mutationKind } from '@/utils/workspaceFileActions'
 const ACTIVE_TURN_STATUSES = ['CREATED', 'RUNNING', 'WAITING_APPROVAL']
 const TERMINAL_EVENT_STATUSES: Record<string, string> = {
   TURN_COMPLETED: 'COMPLETED',
@@ -60,6 +62,7 @@ export const useConversationStore = defineStore('conversation', () => {
   let listRevision = 0
   const hasMoreMessages = ref(false)
   const loadingOlder = ref(false)
+  const olderMessagesError = ref('')
   const streamWarning = ref('')
   let streamTurnId: Id | null = null
   let streamCursor = 0
@@ -70,10 +73,16 @@ export const useConversationStore = defineStore('conversation', () => {
   let restoreOverflow = false
   let olderController: AbortController | null = null
   let requestController: AbortController | null = null
+  let attachmentController: AbortController | null = null
   let realtimeStop: (() => void) | null = null
   const listError = ref('')
   const detailError = ref('')
   const turnError = ref('')
+  let nameRevision = 0
+  const renamedConversations = new Map<string, { title: string; revision: number }>()
+  const renamedProjects = new Map<string, { name: string; revision: number }>()
+  const removedConversations = new Set<string>()
+  const removedProjects = new Set<string>()
   const deltaBuffer = createDeltaBuffer<RealtimeEvent>((events) => {
     let batch = messages.value
     for (const event of events) batch = appendRealtimeMessage(event, batch)
@@ -94,7 +103,10 @@ export const useConversationStore = defineStore('conversation', () => {
     olderController?.abort()
     olderController = null
     loadingOlder.value = false
+    olderMessagesError.value = ''
     requestController?.abort()
+    attachmentController?.abort()
+    attachmentController = null
     requestController = null
     deltaBuffer.clear()
     if (realtimeRefreshTimer) window.clearTimeout(realtimeRefreshTimer)
@@ -142,6 +154,10 @@ export const useConversationStore = defineStore('conversation', () => {
     sending.value = false
     interrupting.value = false
     resolvingId.value = null
+    renamedConversations.clear()
+    renamedProjects.clear()
+    removedConversations.clear()
+    removedProjects.clear()
   }
 
   const pendingApprovals = computed(() =>
@@ -161,11 +177,64 @@ export const useConversationStore = defineStore('conversation', () => {
   )
 
   function upsertConversation(value: Conversation | null) {
-    if (!value) return
+    if (!value || isRemoved(value)) return
     conversations.value = [
       value,
       ...conversations.value.filter((item) => String(item.id) !== String(value.id)),
     ]
+  }
+
+  function isRemoved(value: Conversation) {
+    return (
+      removedConversations.has(String(value.id)) || removedProjects.has(String(value.projectId))
+    )
+  }
+  function retainNames(value: Conversation, before: number) {
+    const conversation = renamedConversations.get(String(value.id))
+    const project = renamedProjects.get(String(value.projectId))
+    return {
+      ...value,
+      ...(conversation && conversation.revision > before ? { title: conversation.title } : {}),
+      ...(project && project.revision > before ? { projectName: project.name } : {}),
+    }
+  }
+  function renameConversation(value: Conversation) {
+    if (isRemoved(value)) return
+    renamedConversations.set(String(value.id), { title: value.title, revision: ++nameRevision })
+    conversations.value = conversations.value.map((item) =>
+      String(item.id) === String(value.id) ? { ...item, title: value.title } : item,
+    )
+    if (String(currentConversation.value?.id) === String(value.id))
+      currentConversation.value = { ...currentConversation.value!, title: value.title }
+  }
+  function renameProject(projectId: Id, projectName: string) {
+    renamedProjects.set(String(projectId), { name: projectName, revision: ++nameRevision })
+    conversations.value = conversations.value.map((item) =>
+      String(item.projectId) === String(projectId) ? { ...item, projectName } : item,
+    )
+    if (String(currentConversation.value?.projectId) === String(projectId))
+      currentConversation.value = { ...currentConversation.value!, projectName }
+  }
+  function removeConversation(conversationId: Id) {
+    const id = String(conversationId)
+    removedConversations.add(id)
+    renamedConversations.delete(id)
+    if (String(currentConversation.value?.id) === id || String(openingConversationId) === id)
+      clearCurrent()
+    conversations.value = conversations.value.filter((item) => String(item.id) !== id)
+  }
+  function removeProject(projectId: Id) {
+    const id = String(projectId)
+    removedProjects.add(id)
+    renamedProjects.delete(id)
+    if (String(currentProjectId.value) === id) {
+      clearCurrent()
+      currentProjectId.value = null
+      listRevision++
+      listLoading.value = false
+      listError.value = ''
+    }
+    conversations.value = conversations.value.filter((item) => String(item.projectId) !== id)
   }
 
   function activateProject(projectId: Id) {
@@ -184,14 +253,18 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function loadConversations(projectId: Id) {
+    if (removedProjects.has(String(projectId))) return []
     const id = activateProject(projectId)
     const revision = ++listRevision
+    const before = nameRevision
     listLoading.value = true
     listError.value = ''
     try {
       const result = await getConversations(id)
       if (id !== currentProjectId.value || revision !== listRevision) return []
-      conversations.value = normalizePageResult(result.data).items
+      conversations.value = normalizePageResult(result.data)
+        .items.filter((item) => !isRemoved(item))
+        .map((item) => retainNames(item, before))
       return conversations.value
     } catch (error) {
       if (id === currentProjectId.value && revision === listRevision)
@@ -207,6 +280,8 @@ export const useConversationStore = defineStore('conversation', () => {
     conversationId: Id,
     options: { silent?: boolean } = {},
   ) {
+    if (removedProjects.has(String(projectId)) || removedConversations.has(String(conversationId)))
+      return null
     const activeProjectId = activateProject(projectId)
     const id = Number(conversationId)
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error('INVALID_CONVERSATION_ID')
@@ -215,6 +290,7 @@ export const useConversationStore = defineStore('conversation', () => {
     const controller = new AbortController()
     requestController = controller
     const revision = ++openRevision
+    const before = nameRevision
     restoring = true
     openingConversationId = id
     deferredFrames = []
@@ -223,6 +299,7 @@ export const useConversationStore = defineStore('conversation', () => {
     deltaBuffer.clear()
     olderController?.abort()
     detailError.value = ''
+    olderMessagesError.value = ''
     if (!options.silent) {
       loading.value = true
     }
@@ -235,7 +312,9 @@ export const useConversationStore = defineStore('conversation', () => {
       ])
       if (revision !== openRevision) return null
       deltaBuffer.clear()
-      currentConversation.value = conversationResult?.data || null
+      currentConversation.value = conversationResult?.data
+        ? retainNames(conversationResult.data, before)
+        : null
       const snapshot = messageResult.data
       const firstSequence = snapshot.messages[0]?.sequenceNo ?? 0
       const older = messages.value.filter((message) => message.sequenceNo < firstSequence)
@@ -433,13 +512,19 @@ export const useConversationStore = defineStore('conversation', () => {
     return updated
   }
 
-  async function loadOlderMessages() {
-    if (!currentConversation.value || !hasMoreMessages.value || loadingOlder.value || restoring)
-      return
+  async function loadOlderMessages(): Promise<boolean> {
+    if (
+      !currentConversation.value ||
+      !hasMoreMessages.value ||
+      !messages.value.length ||
+      loadingOlder.value ||
+      restoring
+    )
+      return false
     const revision = openRevision
-    const conversationId = currentConversation.value.id
     const controller = new AbortController()
     olderController = controller
+    olderMessagesError.value = ''
     loadingOlder.value = true
     try {
       const before = Math.min(...messages.value.map((m) => m.sequenceNo))
@@ -449,18 +534,17 @@ export const useConversationStore = defineStore('conversation', () => {
         controller.signal,
         before,
       )
-      if (revision !== openRevision || controller.signal.aborted) return
+      if (revision !== openRevision || controller.signal.aborted) return false
       const ids = new Set(messages.value.map((m) => String(m.id)))
-      messages.value = [
-        ...result.data.messages.filter((m) => !ids.has(String(m.id))),
-        ...messages.value,
-      ].sort((a, b) => a.sequenceNo - b.sequenceNo)
+      const older = result.data.messages.filter((message) => !ids.has(String(message.id)))
+      messages.value = [...older, ...messages.value].sort((a, b) => a.sequenceNo - b.sequenceNo)
       hasMoreMessages.value = result.data.hasMore
+      return older.length > 0
     } catch (error) {
       if (!controller.signal.aborted && revision === openRevision && !isAborted(error)) {
-        detailError.value = error instanceof Error ? error.message : '历史消息加载失败'
-        navigation.markIssue(conversationId, detailError.value, 'message')
+        olderMessagesError.value = error instanceof Error ? error.message : '历史消息加载失败'
       }
+      return false
     } finally {
       if (olderController === controller) {
         loadingOlder.value = false
@@ -471,6 +555,14 @@ export const useConversationStore = defineStore('conversation', () => {
 
   function applyRealtimeEvent(event: RealtimeEvent | null) {
     if (!event) return
+    if (
+      event.type === 'WORKSPACE_FILES_CHANGED' &&
+      String(event.payload?.projectId) === String(currentConversation.value?.projectId) &&
+      mutationKind(String(event.payload?.kind))
+    ) {
+      void refreshAttachmentLocations()
+      return
+    }
     if (
       restoring &&
       (String(event.payload?.conversationId) === String(openingConversationId) ||
@@ -530,6 +622,34 @@ export const useConversationStore = defineStore('conversation', () => {
     scheduleRealtimeRefresh()
   }
 
+  async function refreshAttachmentLocations() {
+    const conversation = currentConversation.value
+    if (!conversation) return
+    attachmentController?.abort()
+    const controller = (attachmentController = new AbortController())
+    const revision = openRevision
+    try {
+      const { data } = await getConversationMessages(
+        conversation.projectId,
+        conversation.id,
+        controller.signal,
+      )
+      if (controller.signal.aborted || revision !== openRevision) return
+      const fresh = new Map(data.map((message) => [String(message.id), message.attachments]))
+      messages.value = messages.value.map((message) =>
+        fresh.has(String(message.id))
+          ? { ...message, attachments: fresh.get(String(message.id)) }
+          : message,
+      )
+    } catch (cause) {
+      if (!controller.signal.aborted && revision === openRevision)
+        streamWarning.value =
+          cause instanceof Error ? cause.message : '附件位置刷新失败，请刷新会话'
+    } finally {
+      if (attachmentController === controller) attachmentController = null
+    }
+  }
+
   onScopeDispose(stopListening)
 
   return {
@@ -540,6 +660,7 @@ export const useConversationStore = defineStore('conversation', () => {
     listError,
     hasMoreMessages,
     loadingOlder,
+    olderMessagesError,
     loadOlderMessages,
     streamWarning,
     detailError,
@@ -560,6 +681,10 @@ export const useConversationStore = defineStore('conversation', () => {
     canInterrupt,
     canStartTurn,
     upsertConversation,
+    renameConversation,
+    renameProject,
+    removeConversation,
+    removeProject,
     activateProject,
     loadConversations,
     openConversation,

@@ -32,7 +32,7 @@
           ><TableHead style="min-width: 160px">隔离</TableHead
           ><TableHead style="min-width: 90px">会话数</TableHead
           ><TableHead style="min-width: 110px">状态</TableHead
-          ><TableHead style="min-width: 110px">操作</TableHead></TableRow
+          ><TableHead style="min-width: 230px">操作</TableHead></TableRow
         ></TableHeader
       ><TableBody
         ><TableRow v-if="loading"
@@ -58,9 +58,9 @@
                 { READY: '就绪', PREPARING: '准备中', FAILED: '准备失败' }[row.provisioningStatus]
               }}</AppBadge></TableCell
             ><TableCell
-              ><AppButton link tone="primary" @click="open(row)">进入项目</AppButton></TableCell
-            ></TableRow
-          ></template
+              ><div class="flex items-center gap-2">
+                <AppButton link tone="primary" @click="open(row)">进入项目</AppButton>
+                <ProjectActions :project="row" /></div></TableCell></TableRow></template
         ><TableRow v-if="!filteredProjects.length && !loading"
           ><TableCell :colspan="7" class="text-center text-muted-foreground"
             >暂无项目</TableCell
@@ -96,10 +96,13 @@ import { useRouter } from 'vue-router'
 import { Plus } from 'lucide-vue-next'
 import { useProjectQuery } from '@/composables/useProjectQuery'
 import { getProject } from '@/api/project'
+import { useProjectStore } from '@/stores/project'
 import CreateProjectDialog from '../../components/project/CreateProjectDialog.vue'
+import ProjectActions from '@/components/project/ProjectActions.vue'
 
 const router = useRouter()
 const query = useProjectQuery()
+const projectStore = useProjectStore()
 const { items: filteredProjects, loading, error: queryError, total, hasMore } = query
 const createVisible = ref(false)
 const keywordInput = ref('')
@@ -121,9 +124,14 @@ onMounted(() => {
     )) {
       if (preparing.has(project.id)) continue
       preparing.add(project.id)
+      const mutationRevision = projectStore.mutationRevision
       void getProject(project.id, preparationController.signal)
         .then((result) => {
-          if (preparationController.signal.aborted) return
+          if (
+            preparationController.signal.aborted ||
+            mutationRevision !== projectStore.mutationRevision
+          )
+            return
           filteredProjects.value = filteredProjects.value.map((item) =>
             item.id === result.data.id ? result.data : item,
           )

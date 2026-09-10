@@ -6,7 +6,6 @@ import type {
   Enrollment,
   SkillDeployment,
   Id,
-  WorkspaceInput,
 } from '@/types/domain'
 export function getDevices() {
   return request<Device[]>('get', `/devices`)
@@ -22,9 +21,6 @@ export function getDeviceWorkspaces(deviceId: Id) {
 }
 export function getDeviceWorkspaceRoots(deviceId: Id) {
   return request<WorkspaceRoot[]>('get', `/devices/${deviceId}/workspace-roots`)
-}
-export function createWorkspace(deviceId: Id, data: WorkspaceInput) {
-  return request<Workspace>('post', `/devices/${deviceId}/workspaces`, data)
 }
 export function deploySkill(scopeType: string, targetId: Id, versionId: Id) {
   return request<SkillDeployment>('post', `/skill-deployments`, { scopeType, targetId, versionId })

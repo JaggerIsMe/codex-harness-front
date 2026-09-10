@@ -5,12 +5,19 @@ import * as api from '@/api/workspace-file'
 import { ApiError } from '@/api/request'
 import { useWorkspaceFilePreview } from '@/composables/useWorkspaceFilePreview'
 import type { ApiResponse, RealtimeEvent } from '@/types/domain'
-import type { WorkspaceFileEntry, WorkspaceFileOperation } from '@/types/workspace-file'
+import type {
+  WorkspaceFileEntry,
+  WorkspaceFileOperation,
+  WorkspaceFileChange,
+} from '@/types/workspace-file'
 import type { WorkspaceFilePreview } from '@/types/workspace-preview'
 
 const auth = reactive({ token: 'token' })
 const directory = reactive({
   projects: {} as Record<string, Record<string, { generation: string; online: boolean }>>,
+  lastChange: {} as Record<string, WorkspaceFileChange>,
+  resetEpochs: {} as Record<string, number>,
+  applyChange: vi.fn(),
 })
 const agent = reactive({ eventRevision: 0, lastEvent: null as RealtimeEvent | null })
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
@@ -80,6 +87,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   auth.token = 'token'
   directory.projects = { '1': { '': { generation: '1', online: true } } }
+  directory.lastChange = {}
   vi.mocked(api.prepareWorkspaceDownload).mockImplementation(async (_, path) =>
     response(operation(path)),
   )
@@ -90,6 +98,45 @@ beforeEach(() => {
   vi.mocked(api.downloadWorkspaceContent).mockResolvedValue(new Blob(['hello']))
   vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:test'), revokeObjectURL: vi.fn() })
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+})
+it('closes the affected preview for confirmed directory relocation and releases its snapshot', async () => {
+  const { state } = setup()
+  await state.open(entry('docs/a.txt'))
+  expect(state.blob.value).not.toBeNull()
+  directory.lastChange['1'] = {
+    operationId: '30',
+    kind: 'RELOCATE_WORKSPACE_ENTRY',
+    status: 'SUCCEEDED',
+    sourcePath: 'docs',
+    targetPath: 'archive',
+    entryType: 'DIRECTORY',
+  }
+  expect(state.file.value).toBeNull()
+  expect(state.blob.value).toBeNull()
+  expect(state.metadata.value).toBeNull()
+})
+it('keeps an unknown deletion snapshot read-only until individual deletion is confirmed', async () => {
+  const { state } = setup()
+  await state.open(entry('docs/a.txt'))
+  directory.lastChange['1'] = {
+    operationId: '31',
+    kind: 'DELETE_WORKSPACE_ENTRY',
+    status: 'UNKNOWN',
+    sourcePath: 'docs',
+    entryType: 'DIRECTORY',
+  }
+  expect(state.metadata.value?.path).toBe('docs/a.txt')
+  expect(state.changed.value).toBe(true)
+  expect(state.error.value).toContain('核实')
+  directory.lastChange['1'] = {
+    operationId: '31',
+    kind: 'DELETE_WORKSPACE_ENTRY',
+    status: 'PARTIAL_FAILED',
+    sourcePath: 'docs',
+    entryType: 'DIRECTORY',
+    items: [{ path: 'docs/a.txt', status: 'DELETED', entryType: 'FILE' }],
+  }
+  expect(state.file.value).toBeNull()
 })
 afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop())

@@ -1,20 +1,8 @@
-import type {
-  Device,
-  Workspace,
-  WorkspaceRoot,
-  Id,
-  RealtimeEvent,
-  WorkspaceInput,
-} from '@/types/domain'
+import type { Device, Workspace, WorkspaceRoot, Id, RealtimeEvent } from '@/types/domain'
 import { parseRealtimeEvent } from '../utils/realtime'
 import { computed, ref, onScopeDispose } from 'vue'
 import { defineStore } from 'pinia'
-import {
-  createWorkspace as requestWorkspaceCreation,
-  getDevices,
-  getDeviceWorkspaceRoots,
-  getDeviceWorkspaces,
-} from '../api/agent.ts'
+import { getDevices, getDeviceWorkspaceRoots, getDeviceWorkspaces } from '../api/agent.ts'
 import { getAccessToken } from '../utils/auth.ts'
 import { getSocketTicket } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
@@ -94,12 +82,6 @@ export const useAgentStore = defineStore('agent', () => {
       [deviceId]: result?.data || [],
     }
     return workspaceRootsByDevice.value[deviceId]
-  }
-
-  async function createWorkspace(deviceId: Id, data: WorkspaceInput) {
-    const result = await requestWorkspaceCreation(deviceId, data)
-    await loadWorkspaces(deviceId)
-    return result?.data
   }
 
   function scheduleReconnect() {
@@ -215,7 +197,6 @@ export const useAgentStore = defineStore('agent', () => {
     loadWorkspaces,
     loadAllWorkspaces,
     loadWorkspaceRoots,
-    createWorkspace,
     connect,
     disconnect,
     reset,

@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import type { AttachmentLimits, ConversationAttachment, Id } from '@/types/domain'
 import { waitWorkspaceOperation } from '@/api/workspace-file'
 import {
@@ -7,6 +7,8 @@ import {
   uploadAttachment,
   removeAttachment,
 } from '@/api/attachment'
+import { useAgentStore } from '@/stores/agent'
+import { insideWorkspacePath, mutationKind } from '@/utils/workspaceFileActions'
 export interface AttachmentDraft {
   key: string
   name: string
@@ -25,19 +27,35 @@ export function useConversationAttachments(pid: Id, cid: Id) {
   const lifetime = new AbortController()
   const uploads = new Map<string, AbortController>()
   let disposed = false
-  const blocked = computed(() => loading.value || rows.value.some((row) => row.status !== 'ready'))
+  const agent = useAgentStore()
+  let locationEpoch = 0
+  const unavailable = (attachment?: ConversationAttachment) =>
+    attachment?.workspaceLocationState === 'MISSING' ||
+    attachment?.workspaceLocationState === 'UNKNOWN'
+  const blocked = computed(
+    () =>
+      loading.value ||
+      rows.value.some((row) => row.status !== 'ready' || unavailable(row.attachment)),
+  )
   const selected = computed(() =>
     rows.value.flatMap((row) => (row.attachment ? [row.attachment] : [])),
   )
   async function load() {
+    let epoch = ++locationEpoch
     loading.value = true
     error.value = ''
     try {
-      const [settings, pending] = await Promise.all([
+      const [settings, firstPending] = await Promise.all([
         getAttachmentLimits(pid, cid, lifetime.signal),
         getPendingAttachments(pid, cid, lifetime.signal),
       ])
       if (disposed) return
+      let pending = firstPending
+      while (epoch !== locationEpoch) {
+        epoch = locationEpoch
+        pending = await getPendingAttachments(pid, cid, lifetime.signal)
+        if (disposed) return
+      }
       limits.value = settings.data
       rows.value = pending.data.map((attachment) => ({
         key: String(attachment.id),
@@ -45,14 +63,54 @@ export function useConversationAttachments(pid: Id, cid: Id) {
         size: attachment.sizeBytes,
         attachment,
         progress: 100,
-        status: attachment.workspaceOperationId ? 'uploading' : 'ready',
+        status: unavailable(attachment)
+          ? 'error'
+          : attachment.workspaceOperationId
+            ? 'uploading'
+            : 'ready',
+        error: locationError(attachment),
       }))
       for (const row of rows.value)
-        if (row.attachment?.workspaceOperationId) void awaitWorkspace(row)
+        if (row.attachment?.workspaceOperationId && !unavailable(row.attachment))
+          void awaitWorkspace(row)
     } catch (cause) {
       if (!disposed) error.value = cause instanceof Error ? cause.message : '附件加载失败'
     } finally {
       if (!disposed) loading.value = false
+    }
+  }
+  function locationError(attachment?: ConversationAttachment) {
+    return attachment?.workspaceLocationState === 'MISSING'
+      ? '文件已删除，请移除关联后重新上传'
+      : attachment?.workspaceLocationState === 'UNKNOWN'
+        ? '文件位置待核实，暂不可发送'
+        : undefined
+  }
+  async function refreshLocations() {
+    const epoch = ++locationEpoch
+    if (loading.value) return
+    try {
+      const { data } = await getPendingAttachments(pid, cid, lifetime.signal)
+      if (disposed || epoch !== locationEpoch) return
+      const latest = new Map(data.map((attachment) => [String(attachment.id), attachment]))
+      for (const row of rows.value) {
+        const current = row.attachment
+        const attachment = current && latest.get(String(current.id))
+        if (!attachment || (attachment.locationRevision || 0) < (current?.locationRevision || 0))
+          continue
+        row.attachment = attachment
+        if (unavailable(attachment)) {
+          row.status = 'error'
+          row.error = locationError(attachment)
+        } else if (unavailable(current) && row.status !== 'removing') {
+          row.error = ''
+          row.status = 'uploading'
+          void awaitWorkspace(row)
+        }
+      }
+    } catch (cause) {
+      if (!disposed && epoch === locationEpoch)
+        error.value = cause instanceof Error ? cause.message : '附件定位刷新失败'
     }
   }
   async function awaitWorkspace(row: AttachmentDraft, existing?: AbortController) {
@@ -64,6 +122,7 @@ export function useConversationAttachments(pid: Id, cid: Id) {
         throw new Error('附件缺少工作区上传记录，请移除后重新上传')
       if (id) await waitWorkspaceOperation(pid, id, controller.signal)
       if (disposed || controller.signal.aborted) return
+      if (unavailable(row.attachment)) throw new Error(locationError(row.attachment))
       row.progress = 100
       row.status = 'ready'
     } catch (cause) {
@@ -78,6 +137,10 @@ export function useConversationAttachments(pid: Id, cid: Id) {
   async function upload(row: AttachmentDraft) {
     if (disposed) return
     if (row.attachment) {
+      if (unavailable(row.attachment)) {
+        await refreshLocations()
+        return
+      }
       row.status = 'uploading'
       await awaitWorkspace(row)
       return
@@ -151,15 +214,67 @@ export function useConversationAttachments(pid: Id, cid: Id) {
     if (!disposed) rows.value = rows.value.filter((item) => item.key !== row.key)
   }
   function clearSent() {
+    locationEpoch++
     rows.value = []
     error.value = ''
   }
+  watch(
+    () => agent.eventRevision,
+    () => {
+      const event = agent.lastEvent
+      if (
+        event?.type !== 'WORKSPACE_FILES_CHANGED' ||
+        String(event.payload?.projectId) !== String(pid) ||
+        !mutationKind(String(event.payload?.kind))
+      )
+        return
+      const path = event.payload?.sourcePath
+      if (typeof path === 'string')
+        for (const row of rows.value) {
+          if (
+            row.attachment?.workspacePath &&
+            !unavailable(row.attachment) &&
+            insideWorkspacePath(row.attachment.workspacePath, path)
+          ) {
+            row.attachment = { ...row.attachment, workspaceLocationState: 'UNKNOWN' }
+            row.status = 'error'
+            row.error = '正在核实文件当前位置'
+          }
+        }
+      void refreshLocations()
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    () => agent.connectionState,
+    (state) => {
+      if (state === 'CONNECTED') void refreshLocations()
+    },
+  )
+  const onFocus = () => {
+    if (rows.value.length) void refreshLocations()
+  }
+  window.addEventListener('focus', onFocus)
   onScopeDispose(() => {
     disposed = true
+    window.removeEventListener('focus', onFocus)
     lifetime.abort()
     for (const controller of uploads.values()) controller.abort()
     uploads.clear()
   })
   void load()
-  return { rows, limits, loading, error, blocked, selected, add, upload, remove, clearSent, load }
+  return {
+    rows,
+    limits,
+    loading,
+    error,
+    blocked,
+    selected,
+    add,
+    upload,
+    remove,
+    clearSent,
+    load,
+    refreshLocations,
+  }
 }

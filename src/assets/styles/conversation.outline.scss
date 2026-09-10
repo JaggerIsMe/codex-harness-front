@@ -19,8 +19,7 @@
       display: none;
     }
   }
-  &__item,
-  &__more {
+  &__item {
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -61,17 +60,6 @@
   &__item--streaming &__line {
     animation: outline-pulse 1.6s ease-in-out infinite;
   }
-  &__more {
-    justify-content: flex-start;
-    flex: 0 0 24px;
-    color: var(--muted-foreground);
-    font-size: 14px;
-    letter-spacing: 1px;
-    &:disabled {
-      opacity: 0.4;
-      cursor: wait;
-    }
-  }
   &__bridge {
     position: absolute;
     top: 0;
@@ -99,18 +87,13 @@
     }
   }
   &__excerpt {
-    margin-top: 10px;
+    & + & {
+      margin-top: 10px;
+    }
     & > span {
       color: var(--muted-foreground);
       font-size: 10px;
     }
-  }
-  &__heading {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    color: var(--muted-foreground);
-    font-size: 10px;
   }
   &__state {
     display: block;

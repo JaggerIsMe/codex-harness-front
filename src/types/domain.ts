@@ -178,11 +178,6 @@ export interface Credentials {
   username: string
   password: string
 }
-export interface WorkspaceInput {
-  parentName: string
-  workspaceName: string
-  projectType: string
-}
 export interface ProjectInput {
   projectName: string
   deviceId: Id
@@ -192,7 +187,16 @@ export interface ConversationInput {
   expertId: Id
   title?: string
 }
+export interface UpdateProjectInput {
+  projectName: string
+}
+export interface UpdateConversationInput {
+  title: string
+}
 export interface ConversationAttachment {
+  workspaceLocationState?: 'AVAILABLE' | 'MISSING' | 'UNKNOWN'
+  locationRevision?: number
+  lastFileOperationId?: Id | null
   workspacePath?: string | null
   workspaceOperationId?: Id | null
   id: Id
@@ -309,6 +313,13 @@ export interface RealtimeEvent {
     projectId?: Id
     path?: string
     operationId?: Id
+    kind?: string
+    status?: string
+    sourcePath?: string
+    targetPath?: string | null
+    entryType?: 'FILE' | 'DIRECTORY' | 'UNAVAILABLE'
+    entryRevision?: string | null
+    affectedDirectories?: string[]
     conversationId?: Id
     turnId?: Id
     codexTurnId?: string

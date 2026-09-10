@@ -10,9 +10,12 @@
     <AlertDialogContent
       ><AlertDialogHeader
         ><AlertDialogTitle>{{ confirmation?.title }}</AlertDialogTitle
-        ><AlertDialogDescription>{{
-          confirmation?.message
-        }}</AlertDialogDescription></AlertDialogHeader
+        ><AlertDialogDescription>
+          <span>{{ confirmation?.message }}</span>
+          <span v-if="confirmation?.warning" class="mt-2 block text-destructive">{{
+            confirmation.warning
+          }}</span>
+        </AlertDialogDescription></AlertDialogHeader
       >
       <AlertDialogFooter
         ><AlertDialogCancel @click="finishConfirmation(false)">取消</AlertDialogCancel

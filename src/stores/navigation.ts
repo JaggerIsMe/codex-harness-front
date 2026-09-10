@@ -51,8 +51,29 @@ export const useNavigationStore = defineStore('navigation', () => {
   const refreshAgain = new Set<string>()
   let revision = 0
   let stopListening: (() => void) | null = null
+  const removedProjects = new Set<string>()
+  const removedConversations = new Set<string>()
+  const renamedProjects = new Map<string, { name: string; revision: number }>()
+  const renamedConversations = new Map<string, { title: string; revision: number }>()
+
+  function isRemoved(value: Conversation) {
+    return (
+      removedProjects.has(String(value.projectId)) || removedConversations.has(String(value.id))
+    )
+  }
+  function retainNames(value: Conversation, before: number) {
+    const project = renamedProjects.get(String(value.projectId))
+    const conversation = renamedConversations.get(String(value.id))
+    return {
+      ...value,
+      ...(project && project.revision > before ? { projectName: project.name } : {}),
+      ...(conversation && conversation.revision > before ? { title: conversation.title } : {}),
+    }
+  }
 
   function acceptSnapshot(value: Conversation, before = revision) {
+    if (isRemoved(value)) return
+    value = retainNames(value, before)
     const previous = activities.value[value.id]
     if (previous && previous.revision > before) return
     const next = snapshotOf(value)
@@ -250,7 +271,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     silent: boolean,
   ) {
     const key = String(projectId)
-    if (controllers.has(key)) return
+    if (controllers.has(key) || removedProjects.has(key)) return
     const controller = new AbortController()
     const before = revision
     const generation = queryGeneration
@@ -271,6 +292,9 @@ export const useNavigationStore = defineStore('navigation', () => {
       })
       if (!controller.signal.aborted && generation === queryGeneration) {
         const page = normalizePageResult(result.data, requestedPage, PAGE_SIZE)
+        page.items = page.items
+          .filter((value) => !isRemoved(value))
+          .map((value) => retainNames(value, before))
         for (const value of page.items) acceptSnapshot(value, before)
         // The server also searches project, device and workspace metadata.
         const resultIds = queryResultIds.get(key) || new Set<string>()
@@ -346,6 +370,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   }
 
   function upsert(value: Conversation, options: { promote?: boolean } = {}) {
+    if (isRemoved(value)) return
     acceptSnapshot(value)
     if (options.promote !== false) useProjectStore().promoteProject(value.projectId)
     const key = String(value.projectId)
@@ -361,8 +386,99 @@ export const useNavigationStore = defineStore('navigation', () => {
     if (expanded.value[key] === undefined) expanded.value[key] = true
   }
 
+  function renameConversation(value: Conversation) {
+    if (isRemoved(value)) return
+    renamedConversations.set(String(value.id), { title: value.title, revision: ++revision })
+    const key = String(value.projectId)
+    conversations.value[key] = (conversations.value[key] || []).map((item) =>
+      sameId(item.id, value.id) ? { ...item, title: value.title } : item,
+    )
+    const current = activities.value[value.id]
+    if (current) {
+      current.conversation = { ...current.conversation, title: value.title }
+      current.revision = revision
+    }
+    const pending = pendingUpdates.get(key)?.get(value.id)
+    if (pending) pendingUpdates.get(key)!.set(value.id, { ...pending, title: value.title })
+  }
+  function renameProject(projectId: Id, projectName: string) {
+    const key = String(projectId)
+    renamedProjects.set(key, { name: projectName, revision: ++revision })
+    if (conversations.value[key])
+      conversations.value[key] = conversations.value[key]!.map((value) => ({
+        ...value,
+        projectName,
+      }))
+    for (const current of Object.values(activities.value)) {
+      if (sameId(current.conversation.projectId, projectId)) {
+        current.conversation = { ...current.conversation, projectName }
+        current.revision = revision
+      }
+    }
+    for (const [id, value] of pendingUpdates.get(key) || [])
+      pendingUpdates.get(key)!.set(id, { ...value, projectName })
+  }
+  function cancelProjectRequests(projectId: Id) {
+    const key = String(projectId)
+    controllers.get(key)?.abort()
+    controllers.delete(key)
+    statusControllers.get(key)?.abort()
+    statusControllers.delete(key)
+    const timer = refreshTimers.get(key)
+    if (timer !== undefined) window.clearTimeout(timer)
+    refreshTimers.delete(key)
+    refreshAgain.delete(key)
+    reloadAgain.delete(key)
+    pendingUpdates.delete(key)
+    pendingStatusIds.delete(key)
+    loading.value[key] = loadingMore.value[key] = false
+  }
+  function removeConversation(projectId: Id, conversationId: Id) {
+    const key = String(projectId),
+      id = String(conversationId)
+    if (removedConversations.has(id)) return
+    removedConversations.add(id)
+    cancelProjectRequests(projectId)
+    conversations.value[key] = (conversations.value[key] || []).filter(
+      (value) => !sameId(value.id, conversationId),
+    )
+    queryResultIds.get(key)?.delete(id)
+    delete activities.value[id]
+    delete readReceipts.value[id]
+    pendingIssues.delete(id)
+    renamedConversations.delete(id)
+    const page = pagination.value[key]
+    if (page) {
+      page.total = Math.max(0, page.total - 1)
+      page.page = Math.min(page.page, 1)
+    }
+    saveReadReceipts()
+  }
+  function removeProject(projectId: Id) {
+    const key = String(projectId)
+    removedProjects.add(key)
+    cancelProjectRequests(projectId)
+    const ids = new Set([
+      ...(conversations.value[key] || []).map((value) => value.id),
+      ...Object.values(activities.value)
+        .filter((value) => sameId(value.conversation.projectId, projectId))
+        .map((value) => value.conversation.id),
+    ])
+    ids.forEach((id) => removeConversation(projectId, id))
+    delete conversations.value[key]
+    delete pagination.value[key]
+    delete expanded.value[key]
+    delete loading.value[key]
+    delete loadingMore.value[key]
+    delete errors.value[key]
+    delete errorsMore.value[key]
+    queryResultIds.delete(key)
+    renamedProjects.delete(key)
+  }
+
   async function syncStatuses(projectId: Id) {
     const key = String(projectId)
+    if (removedProjects.has(key)) return
     if (statusControllers.has(key)) {
       refreshAgain.add(key)
       return
@@ -417,6 +533,11 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   function scheduleRefresh(projectId: Id, conversationId?: Id) {
     const key = String(projectId)
+    if (
+      removedProjects.has(key) ||
+      (conversationId != null && removedConversations.has(String(conversationId)))
+    )
+      return
     if (conversationId != null) {
       const ids = pendingStatusIds.get(key) || new Set<Id>()
       ids.add(conversationId)
@@ -473,6 +594,7 @@ export const useNavigationStore = defineStore('navigation', () => {
       else return
     }
     const current = conversationId != null ? activities.value[conversationId] : undefined
+    if (conversationId != null && removedConversations.has(String(conversationId))) return
     if (!current) {
       // Events can arrive before the first sidebar response or from another browser.
       if (payload?.projectId) scheduleRefresh(payload.projectId, conversationId)
@@ -601,6 +723,10 @@ export const useNavigationStore = defineStore('navigation', () => {
     disconnected.value = false
     readReceipts.value = {}
     receiptOwner = null
+    removedProjects.clear()
+    removedConversations.clear()
+    renamedProjects.clear()
+    renamedConversations.clear()
     revision += 1
   }
   onScopeDispose(reset)
@@ -617,6 +743,10 @@ export const useNavigationStore = defineStore('navigation', () => {
     hasMore,
     setKeyword,
     upsert,
+    renameConversation,
+    renameProject,
+    removeConversation,
+    removeProject,
     reset,
     activity,
     unreadKey,

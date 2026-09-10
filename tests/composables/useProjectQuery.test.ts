@@ -1,12 +1,21 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
+import { flushPromises } from '@vue/test-utils'
 import { effectScope } from 'vue'
 import { getProjects } from '@/api/project'
 import { useProjectQuery } from '@/composables/useProjectQuery'
+import { useProjectStore } from '@/stores/project'
 import type { ApiResponse, PageResult, Project } from '@/types/domain'
 vi.mock('@/api/project', () => ({ getProjects: vi.fn() }))
 const scopes: ReturnType<typeof effectScope>[] = []
+let pinia: ReturnType<typeof createPinia>
+beforeEach(() => {
+  pinia = createPinia()
+  setActivePinia(pinia)
+})
 afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop())
+  disposePinia(pinia)
   vi.resetAllMocks()
 })
 function create() {
@@ -90,4 +99,26 @@ it('cancels obsolete searches and requests when the picker scope closes', async 
   const signal = vi.mocked(getProjects).mock.calls.at(-1)![0]!
   scopes[0]!.stop()
   expect(signal.aborted).toBe(true)
+})
+
+it('refreshes the existing search and removes deleted Projects from previously loaded pages', async () => {
+  const query = create()
+  vi.mocked(getProjects)
+    .mockResolvedValueOnce(response([1]))
+    .mockResolvedValueOnce(response([2], 2))
+  await query.search('matching')
+  await query.loadMore()
+  vi.mocked(getProjects).mockResolvedValueOnce(response([1], 1, 1))
+
+  useProjectStore().removeProject(2)
+  await flushPromises()
+
+  expect(getProjects).toHaveBeenLastCalledWith(expect.any(AbortSignal), {
+    page: 1,
+    size: 20,
+    keyword: 'matching',
+  })
+  expect(query.items.value.map((item) => item.id)).toEqual([1])
+  expect(query.page.value).toBe(1)
+  expect(query.hasMore.value).toBe(false)
 })

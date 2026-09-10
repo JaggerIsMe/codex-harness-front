@@ -41,6 +41,12 @@ const navigation = reactive({
 vi.mock('@/stores/project', () => ({ useProjectStore: () => projects }))
 vi.mock('@/stores/conversation', () => ({ useConversationStore: () => current }))
 vi.mock('@/stores/navigation', () => ({ useNavigationStore: () => navigation }))
+vi.mock('@/components/project/ProjectActions.vue', () => ({
+  default: { template: '<span />' },
+}))
+vi.mock('@/components/conversation/ConversationActions.vue', () => ({
+  default: { template: '<span />' },
+}))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { projectId: '3' }, query: {} }) }))
 
 const conversation: Conversation = {
@@ -103,14 +109,17 @@ it.each<Activity>([
   (activity) => {
     activities[4] = activity
     const view = render()
-    const link = view.get('a.workspace-conversation')
-    const indicator = link.get('.workspace-conversation__activity')
-    const description = indicator.get('.sr-only')
+    const row = view.get('.workspace-conversation-row')
+    const link = row.get('a.workspace-conversation')
+    const indicator = row.find('.workspace-conversation__activity')
+    const description = link.get('.sr-only')
 
     expect(link.attributes('aria-label')).toBe(conversation.title)
     expect(link.attributes('title')).toBe(`${conversation.title} · ${activity.label}`)
     expect(link.attributes('aria-describedby')).toBe(description.attributes('id'))
     expect(description.text()).toBe(activity.label)
+    expect(indicator.exists()).toBe(activity.state !== 'idle')
+    if (activity.state === 'idle') return
     expect(indicator.attributes('data-state')).toBe(activity.state)
     expect(indicator.find('.workspace-conversation__spinner').exists()).toBe(
       activity.state === 'running',
@@ -126,7 +135,8 @@ it.each<Activity>([
 it('updates activity in place without replacing the Conversation link or title', async () => {
   activities[4] = { state: 'running', label: '正在准备专家 Skills' }
   const view = render()
-  const link = view.get('a.workspace-conversation')
+  const row = view.get('.workspace-conversation-row')
+  const link = row.get('a.workspace-conversation')
   const element = link.element
   const descriptionId = link.attributes('aria-describedby')
 
@@ -134,15 +144,17 @@ it('updates activity in place without replacing the Conversation link or title',
     { state: 'completed', label: 'Turn 已完成' },
     { state: 'error', label: 'Device 离线' },
     { state: 'idle', label: '未开始' },
+    { state: 'running', label: 'Codex 正在执行' },
   ] satisfies Activity[]) {
     activities[4] = activity
     await nextTick()
     expect(view.get('a.workspace-conversation').element).toBe(element)
     expect(link.get('.workspace-conversation__title').text()).toBe(conversation.title)
-    expect(link.get('.workspace-conversation__activity').attributes('data-state')).toBe(
-      activity.state,
-    )
+    const indicator = row.find('.workspace-conversation__activity')
+    expect(indicator.exists()).toBe(activity.state !== 'idle')
+    if (activity.state !== 'idle') expect(indicator.attributes('data-state')).toBe(activity.state)
     expect(link.get('.sr-only').text()).toBe(activity.label)
+    expect(link.get('.sr-only').attributes('id')).toBe(descriptionId)
     expect(link.attributes('aria-describedby')).toBe(descriptionId)
   }
 })
@@ -151,7 +163,8 @@ it('describes each Conversation separately and preserves the fallback link name'
   navigation.conversations[3]!.push({ ...conversation, id: 5, title: '' })
   activities[4] = { state: 'running', label: '正在执行' }
   activities[5] = { state: 'completed', label: '已完成' }
-  const links = render().findAll('a.workspace-conversation')
+  const rows = render().findAll('.workspace-conversation-row')
+  const links = rows.map((row) => row.get('a.workspace-conversation'))
 
   expect(links[1]!.attributes('aria-label')).toBe('会话 #5')
   expect(links[0]!.attributes('aria-describedby')).not.toBe(

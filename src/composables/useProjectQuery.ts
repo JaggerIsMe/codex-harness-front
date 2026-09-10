@@ -1,10 +1,12 @@
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
+import { useProjectStore } from '@/stores/project'
 import { getProjects } from '@/api/project'
 import { normalizePageResult } from '@/utils/pagination'
 import type { Project } from '@/types/domain'
 
 /** A picker or management page has its own query, independent of sidebar search. */
 export function useProjectQuery() {
+  const projects = useProjectStore()
   const items = ref<Project[]>([])
   const keyword = ref('')
   const page = ref(0)
@@ -75,6 +77,10 @@ export function useProjectQuery() {
   function refresh() {
     return load(1)
   }
+  watch(
+    () => projects.mutationRevision,
+    () => void search(keyword.value),
+  )
   onScopeDispose(cancel)
   return {
     items,

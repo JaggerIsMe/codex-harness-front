@@ -11,17 +11,6 @@
     @focusout="handleFocusOut"
     @keydown.esc.stop="closePreview"
   >
-    <button
-      v-if="hasMore"
-      type="button"
-      class="conversation-outline__more"
-      aria-label="在导航中加载更早消息"
-      title="加载更早消息"
-      :disabled="loadingOlder"
-      @click="emit('loadOlder')"
-    >
-      <span aria-hidden="true">{{ loadingOlder ? '·' : '···' }}</span>
-    </button>
     <div ref="track" class="conversation-outline__track" @scroll.passive="handleTrackScroll">
       <button
         v-for="(entry, index) in entries"
@@ -33,7 +22,7 @@
           'conversation-outline__item--streaming': entry.streaming,
         }"
         :data-outline-id="entry.id"
-        :aria-label="`跳转到第 ${index + 1} 轮：${(entry.prompt || entry.reply).slice(0, 60)}`"
+        :aria-label="`跳转到消息：${(entry.prompt || entry.reply).slice(0, 60)}`"
         :aria-current="activeEntryId === entry.id ? 'location' : undefined"
         :aria-describedby="previewId === entry.id ? tooltipId : undefined"
         :tabindex="entry.id === tabStopId ? 0 : -1"
@@ -54,16 +43,12 @@
       class="conversation-outline__preview"
       :style="{ top: `${previewTop}px` }"
     >
-      <div class="conversation-outline__heading">
-        <span>第 {{ previewIndex + 1 }} 轮</span>
-        <span>{{ previewIndex + 1 }} / {{ entries.length }}</span>
-      </div>
       <div v-if="previewEntry.prompt" class="conversation-outline__excerpt">
         <span>用户</span>
         <p>{{ previewEntry.prompt }}</p>
       </div>
       <div v-if="previewEntry.reply" class="conversation-outline__excerpt">
-        <span>助手</span>
+        <span>Agent</span>
         <p>{{ previewEntry.reply }}</p>
       </div>
       <span v-if="previewEntry.streaming" class="conversation-outline__state">正在回复…</span>
@@ -81,10 +66,8 @@ import { useOutlineProximity } from '@/composables/useOutlineProximity'
 const props = defineProps<{
   messages: DisplayMessage[]
   activeId: string | null
-  hasMore?: boolean
-  loadingOlder?: boolean
 }>()
-const emit = defineEmits<{ navigate: [id: string]; loadOlder: [] }>()
+const emit = defineEmits<{ navigate: [id: string] }>()
 const outline = ref<HTMLElement | null>(null)
 const track = ref<HTMLElement | null>(null)
 const preview = ref<HTMLElement | null>(null)
@@ -111,10 +94,7 @@ const {
   refresh: refreshProximity,
 } = useOutlineProximity(track, markerIds)
 const tabStopId = computed(() => activeEntryId.value || entries.value[0]?.id)
-const previewIndex = computed(() =>
-  entries.value.findIndex((entry) => entry.id === previewId.value),
-)
-const previewEntry = computed(() => entries.value[previewIndex.value])
+const previewEntry = computed(() => entries.value.find((entry) => entry.id === previewId.value))
 
 function closePreview() {
   previewId.value = null

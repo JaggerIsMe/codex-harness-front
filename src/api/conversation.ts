@@ -6,6 +6,7 @@ import type {
   Approval,
   Id,
   ConversationInput,
+  UpdateConversationInput,
   TurnInput,
   Message,
   Decision,
@@ -76,6 +77,20 @@ export function getConversationApprovals(projectId: Id, conversationId: Id, sign
 }
 export function createConversation(projectId: Id, data: ConversationInput) {
   return request<Conversation>('post', `/projects/${projectId}/conversations`, data)
+}
+export function updateConversation(
+  projectId: Id,
+  conversationId: Id,
+  data: UpdateConversationInput,
+) {
+  return request<Conversation>(
+    'put',
+    `/projects/${projectId}/conversations/${conversationId}`,
+    data,
+  )
+}
+export function deleteConversation(projectId: Id, conversationId: Id) {
+  return request<null>('delete', `/projects/${projectId}/conversations/${conversationId}`)
 }
 export function startTurn(projectId: Id, conversationId: Id, data: TurnInput) {
   return request<Turn>('post', `/projects/${projectId}/conversations/${conversationId}/turns`, data)

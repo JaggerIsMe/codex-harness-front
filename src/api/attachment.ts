@@ -1,5 +1,6 @@
 import { request } from './request'
 import type { AttachmentLimits, ConversationAttachment, Id } from '@/types/domain'
+import type { WorkspaceFileOperation } from '@/types/workspace-file'
 const base = (pid: Id, cid: Id) => `/projects/${pid}/conversations/${cid}/attachments`
 export function getAttachmentLimits(pid: Id, cid: Id, signal?: AbortSignal) {
   return request<AttachmentLimits>('get', `${base(pid, cid)}/limits`, undefined, { signal })
@@ -25,4 +26,18 @@ export function uploadAttachment(
 }
 export function removeAttachment(pid: Id, cid: Id, aid: Id, signal?: AbortSignal) {
   return request<void>('delete', `${base(pid, cid)}/${aid}`, undefined, { signal })
+}
+export function prepareAttachmentDownload(
+  pid: Id,
+  cid: Id,
+  aid: Id,
+  requestKey: string,
+  signal: AbortSignal,
+) {
+  return request<WorkspaceFileOperation>(
+    'post',
+    `${base(pid, cid)}/${aid}/downloads`,
+    { requestKey },
+    { signal },
+  )
 }

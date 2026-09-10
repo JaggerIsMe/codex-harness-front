@@ -29,6 +29,20 @@ export function parseRealtimeEvent(frame: string): RealtimeEvent | null {
             projectId: id(payload.projectId),
             path: text('path'),
             operationId: id(payload.operationId),
+            kind: text('kind'),
+            status: text('status'),
+            sourcePath: text('sourcePath'),
+            targetPath: text('targetPath'),
+            entryType: ['FILE', 'DIRECTORY', 'UNAVAILABLE'].includes(String(payload.entryType))
+              ? (payload.entryType as 'FILE' | 'DIRECTORY' | 'UNAVAILABLE')
+              : undefined,
+            entryRevision: text('entryRevision'),
+            affectedDirectories:
+              Array.isArray(payload.affectedDirectories) &&
+              payload.affectedDirectories.length <= 100 &&
+              payload.affectedDirectories.every((path) => typeof path === 'string')
+                ? payload.affectedDirectories
+                : undefined,
             conversationId: id(payload.conversationId),
             turnId: id(payload.turnId),
             codexTurnId: text('codexTurnId'),

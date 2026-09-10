@@ -8,7 +8,11 @@
       @refresh="refresh"
     />
     <template v-else-if="currentProject">
-      <ChatWorkspace :project-name="currentProject.projectName" @create="createVisible = true" />
+      <ChatWorkspace
+        :project="currentProject"
+        :project-name="currentProject.projectName"
+        @create="createVisible = true"
+      />
       <CreateConversationDialog
         v-model="createVisible"
         :project-id="projectId"

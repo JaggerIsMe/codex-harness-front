@@ -70,17 +70,26 @@
           >
             <div
               ref="messagePanel"
-              :aria-busy="loading"
+              :aria-busy="loading || conversationStore.loadingOlder"
               class="message-panel"
               @scroll.passive="handleMessageScroll"
             >
               <div ref="messageContent" class="message-panel__content">
-                <AppButton
-                  v-if="conversationStore.hasMoreMessages"
-                  :loading="conversationStore.loadingOlder"
-                  @click="conversationStore.loadOlderMessages()"
-                  >加载更早消息</AppButton
+                <p
+                  v-if="conversationStore.loadingOlder"
+                  role="status"
+                  class="py-2 text-center text-sm text-muted-foreground"
                 >
+                  正在加载更早消息…
+                </p>
+                <p
+                  v-else-if="conversationStore.olderMessagesError"
+                  role="alert"
+                  class="py-2 text-center text-sm text-destructive"
+                >
+                  {{ conversationStore.olderMessagesError }}。可重新滚动到顶部，或
+                  <AppButton link label="重试加载历史消息" @click="retryHistory">重试</AppButton>。
+                </p>
                 <div
                   v-for="message in displayMessages"
                   :key="message.id"
@@ -97,6 +106,7 @@
                       :key="String(currentConversation.id)"
                       :attachments="message.attachments"
                       :project-id="currentConversation.projectId"
+                      :conversation-id="currentConversation.id"
                     />
                   </article>
 
@@ -154,10 +164,7 @@
               :key="String(currentConversation.id)"
               :messages="displayMessages"
               :active-id="activeMessageId"
-              :has-more="conversationStore.hasMoreMessages"
-              :loading-older="conversationStore.loadingOlder"
               @navigate="navigateToMessage"
-              @load-older="conversationStore.loadOlderMessages()"
             />
             <AppButton
               v-if="!isAtBottom || isAgentReplying"
@@ -194,7 +201,10 @@
             <span class="empty-intro__label">{{ projectName || '工作区' }}</span>
             <h2>今天想做些什么？</h2>
             <p>新建一个会话，开始与 Codex 一起工作。</p>
-            <AppButton :icon="Plus" tone="primary" @click="emit('create')">新建会话</AppButton>
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <AppButton :icon="Plus" tone="primary" @click="emit('create')">新建会话</AppButton>
+              <ProjectActions v-if="project" :key="project.id" :project="project" />
+            </div>
             <RouterLink
               v-if="conversationStore.currentProjectId"
               :to="`/projects/${conversationStore.currentProjectId}/experts`"
@@ -238,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Approval, Decision, DisplayMessage } from '@/types/domain'
+import type { Approval, Decision, DisplayMessage, Project } from '@/types/domain'
 import EmptyState from '@/components/common/EmptyState.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppButton from '@/components/common/AppButton.vue'
@@ -255,6 +265,7 @@ import AgentProcess from './AgentProcess.vue'
 import MessageContent from './MessageContent.vue'
 import ConversationComposer from './ConversationComposer.vue'
 import ConversationOutline from './ConversationOutline.vue'
+import ProjectActions from '@/components/project/ProjectActions.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import { useTurnExperts } from '@/composables/useTurnExperts'
 import { useProjectExpertUpgradeNotice } from '@/composables/useProjectExpertUpgradeNotice'
@@ -269,7 +280,7 @@ import type { WorkspaceFileEntry } from '@/types/workspace-file'
 const filesOpen = ref(false)
 const workbenchLayout = ref<InstanceType<typeof WorkspaceWorkbenchLayout> | null>(null)
 
-defineProps<{ projectName?: string }>()
+defineProps<{ project?: Project; projectName?: string }>()
 const emit = defineEmits<{ create: [] }>()
 const conversationStore = useConversationStore()
 const navigation = useNavigationStore()
@@ -322,10 +333,16 @@ const {
   handleScroll: handleMessageScroll,
   jumpToBottom,
   jumpToMessage,
+  retryHistory,
 } = useConversationScroll(
   messagePanel,
   messageContent,
   computed(() => currentConversation.value?.id),
+  {
+    hasMore: () => conversationStore.hasMoreMessages,
+    loading: () => loading.value || conversationStore.loadingOlder,
+    loadOlder: () => conversationStore.loadOlderMessages(),
+  },
 )
 const displayMessages = computed(() => buildConversationDisplayMessages(messages.value))
 const outlineVisible = computed(

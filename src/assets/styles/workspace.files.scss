@@ -70,3 +70,26 @@
     white-space: nowrap;
   }
 }
+.workspace-file-menu {
+  z-index: 100;
+  min-width: 150px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--popover, var(--background));
+  box-shadow: 0 5px 18px rgb(0 0 0 / 12%);
+  [role='menuitem'] {
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+    &[data-highlighted] {
+      background: var(--muted);
+    }
+    &[data-disabled] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}

@@ -7,6 +7,7 @@ import * as api from '@/api/workspace-file'
 import type { Id } from '@/types/domain'
 import type { WorkspaceFileEntry } from '@/types/workspace-file'
 import type { WorkspaceFilePreview } from '@/types/workspace-preview'
+import { insideWorkspacePath, workspaceChangeEvent } from '@/utils/workspaceFileActions'
 
 export function useWorkspaceFilePreview(
   projectId: Ref<Id | undefined>,
@@ -142,11 +143,16 @@ export function useWorkspaceFilePreview(
       const event = agent.lastEvent
       const snapshot = metadata.value
       if (
-        !snapshot ||
         event?.type !== 'WORKSPACE_FILES_CHANGED' ||
         String(event.payload?.projectId) !== String(projectId.value)
       )
         return
+      const change = workspaceChangeEvent(event.payload)
+      if (change && projectId.value !== undefined) {
+        directories.applyChange(projectId.value, change)
+        return
+      }
+      if (!snapshot) return
       // Preparing this very snapshot also emits WORKSPACE_FILES_CHANGED; it isn't a modification.
       if (String(event.payload?.operationId) === String(snapshot.operationId)) return
       const path = event.payload?.path
@@ -158,7 +164,33 @@ export function useWorkspaceFilePreview(
     },
     { flush: 'sync' },
   )
+  watch(
+    () => directories.lastChange[String(projectId.value)],
+    (change) => {
+      const path = file.value?.path
+      if (!change || !path || !insideWorkspacePath(path, change.sourcePath)) return
+      if (
+        change.status === 'SUCCEEDED' ||
+        change.items?.some((item) => item.path === path && item.status === 'DELETED')
+      )
+        close()
+      else {
+        changed.value = true
+        error.value = '文件操作结果尚未完全确认；当前显示操作前的只读副本，请核实状态'
+      }
+    },
+    { flush: 'sync' },
+  )
   watch([projectId, conversationId, () => auth.token], clear, { flush: 'sync' })
+  watch(
+    () => directories.resetEpochs[String(projectId.value)],
+    () => {
+      if (!metadata.value) return
+      changed.value = true
+      error.value = '文件变更记录需要重新同步；当前显示原只读副本，请刷新目录核实'
+    },
+    { flush: 'sync' },
+  )
   // A revoked directory request clears the project cache; erase the local preview as well.
   watch(
     () => directories.projects[String(projectId.value)],

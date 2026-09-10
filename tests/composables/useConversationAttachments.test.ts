@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { effectScope } from 'vue'
+import { effectScope, reactive } from 'vue'
 import { flushPromises } from '@vue/test-utils'
 import * as api from '@/api/attachment'
 import { useConversationAttachments } from '@/composables/useConversationAttachments'
-import type { ApiResponse } from '@/types/domain'
+import type { ApiResponse, RealtimeEvent } from '@/types/domain'
 import { waitWorkspaceOperation } from '@/api/workspace-file'
 vi.mock('@/api/workspace-file', () => ({ waitWorkspaceOperation: vi.fn() }))
+const agent = reactive({
+  eventRevision: 0,
+  lastEvent: null as RealtimeEvent | null,
+  connectionState: 'DISCONNECTED',
+})
+vi.mock('@/stores/agent', () => ({ useAgentStore: () => agent }))
 vi.mock('@/api/attachment', () => ({
   getAttachmentLimits: vi.fn(),
   getPendingAttachments: vi.fn(),
@@ -30,6 +36,8 @@ function create() {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  agent.lastEvent = null
+  agent.eventRevision = 0
   vi.mocked(api.getAttachmentLimits).mockResolvedValue(
     result({ maxFileBytes: 10, maxFiles: 2, maxTotalBytes: 15, agentSupported: true }),
   )
@@ -156,4 +164,84 @@ it('keeps an uploaded draft when server rejects removal', async () => {
   await state.remove(state.rows.value[0]!)
   expect(state.selected.value).toEqual([attachment])
   expect(state.error.value).toBe('Already sent')
+})
+it('never lets the original upload completion restore a deleted attachment', async () => {
+  const uploaded = {
+    ...attachment,
+    workspacePath: 'hello.txt',
+    workspaceOperationId: '100',
+    workspaceLocationState: 'AVAILABLE' as const,
+    locationRevision: 0,
+  }
+  vi.mocked(api.getPendingAttachments).mockResolvedValue(result([uploaded]))
+  let finish!: () => void
+  vi.mocked(waitWorkspaceOperation).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = () =>
+          resolve({
+            id: '100',
+            kind: 'UPLOAD_WORKSPACE_FILE',
+            path: 'hello.txt',
+            status: 'SUCCEEDED',
+            error: null,
+          })
+      }),
+  )
+  const { state } = create()
+  await flushPromises()
+  vi.mocked(api.getPendingAttachments).mockResolvedValue(
+    result([{ ...uploaded, workspaceLocationState: 'MISSING', locationRevision: 1 }]),
+  )
+  await state.refreshLocations()
+  finish()
+  await flushPromises()
+  expect(state.blocked.value).toBe(true)
+  expect(state.rows.value[0]?.attachment?.workspaceLocationState).toBe('MISSING')
+  expect(state.rows.value[0]?.status).toBe('error')
+})
+it('refreshes current attachment paths while preserving the original display name and hash', async () => {
+  const uploaded = {
+    ...attachment,
+    workspacePath: 'hello.txt',
+    workspaceOperationId: '100',
+    locationRevision: 0,
+  }
+  vi.mocked(api.getPendingAttachments).mockResolvedValue(result([uploaded]))
+  const { state } = create()
+  await flushPromises()
+  vi.mocked(api.getPendingAttachments).mockResolvedValue(
+    result([{ ...uploaded, workspacePath: 'reports/moved.txt', locationRevision: 1 }]),
+  )
+  await state.refreshLocations()
+  expect(state.selected.value[0]).toMatchObject({
+    fileName: 'hello.txt',
+    sha256: 'abc',
+    workspacePath: 'reports/moved.txt',
+  })
+  vi.mocked(api.getPendingAttachments).mockResolvedValue(result([uploaded]))
+  await state.refreshLocations()
+  expect(state.selected.value[0]?.workspacePath).toBe('reports/moved.txt')
+})
+it('rechecks a late initial attachment snapshot when a file change arrived while loading', async () => {
+  let finish!: (value: ApiResponse<(typeof attachment)[]>) => void
+  vi.mocked(api.getPendingAttachments).mockImplementationOnce(
+    () => new Promise((resolve) => (finish = resolve)),
+  )
+  const { state } = create()
+  await state.refreshLocations()
+  vi.mocked(api.getPendingAttachments).mockResolvedValue(
+    result([
+      {
+        ...attachment,
+        workspacePath: 'hello.txt',
+        workspaceLocationState: 'MISSING',
+        locationRevision: 1,
+      },
+    ]),
+  )
+  finish(result([attachment]))
+  await flushPromises()
+  expect(state.rows.value[0]?.attachment?.workspaceLocationState).toBe('MISSING')
+  expect(state.blocked.value).toBe(true)
 })

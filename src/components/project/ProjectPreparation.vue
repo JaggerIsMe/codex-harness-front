@@ -1,6 +1,9 @@
 <template>
   <section class="grid gap-4 rounded-xl border p-6" aria-live="polite">
-    <h2 class="text-lg font-semibold">{{ project.projectName }}</h2>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold">{{ project.projectName }}</h2>
+      <ProjectActions :key="project.id" :project="project" />
+    </div>
     <p v-if="project.provisioningStatus === 'PREPARING'">
       正在 {{ project.deviceName }} 上准备独占执行目录…
     </p>
@@ -28,6 +31,7 @@
 import { ref } from 'vue'
 import type { Project } from '@/types/domain'
 import AppButton from '@/components/common/AppButton.vue'
+import ProjectActions from '@/components/project/ProjectActions.vue'
 import { retryProjectPreparation } from '@/api/project'
 import { useProjectStore } from '@/stores/project'
 const props = defineProps<{ project: Project; loading?: boolean }>()

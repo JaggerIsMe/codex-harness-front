@@ -61,3 +61,70 @@ it('filters internal entries from responses and retained pages at every depth', 
   store.toggle(1, '.codex')
   expect(store.expanded['1']).toEqual(['docs'])
 })
+it('discards even a newer generation if its request began before a structural change', () => {
+  const store = useWorkspaceFileStore()
+  store.apply(1, directory('20', 'old.txt'), '', '0')
+  const epoch = store.epoch(1)
+  store.applyChange(1, {
+    operationId: '10',
+    kind: 'DELETE_WORKSPACE_ENTRY',
+    status: 'SUCCEEDED',
+    sourcePath: 'old.txt',
+    entryType: 'FILE',
+  })
+  store.apply(1, directory('999', 'old.txt'), '', '20', epoch)
+  expect(store.directory(1, '').entries).toEqual([])
+  store.apply(1, directory('1000', 'new.txt'), '', '0', store.epoch(1))
+  expect(store.directory(1, '').entries[0]?.name).toBe('new.txt')
+})
+it('invalidates folded descendants and maps only complete path segments once', () => {
+  const store = useWorkspaceFileStore()
+  store.directory(1, 'docs/a').loaded = true
+  store.directory(1, 'docs/a/folded').loaded = true
+  store.directory(1, 'docs/another').loaded = true
+  store.expanded['1'] = ['docs/a', 'docs/a/nested', 'docs/another']
+  const change = {
+    operationId: '11',
+    kind: 'RELOCATE_WORKSPACE_ENTRY',
+    status: 'SUCCEEDED' as const,
+    sourcePath: 'docs/a',
+    targetPath: 'archive',
+    entryType: 'DIRECTORY' as const,
+  }
+  expect(store.applyChange(1, change)).toBe(true)
+  expect(store.projects['1']?.['docs/a/folded']).toBeUndefined()
+  expect(store.projects['1']?.['docs/another']?.loaded).toBe(true)
+  expect(store.expanded['1']).toEqual(['archive', 'archive/nested', 'docs/another'])
+  expect(store.applyChange(1, change)).toBe(false)
+})
+it('does not replay an older mutation or downgrade a confirmed mutation to UNKNOWN', () => {
+  const store = useWorkspaceFileStore()
+  store.applyChange(1, {
+    operationId: '20',
+    kind: 'RELOCATE_WORKSPACE_ENTRY',
+    status: 'SUCCEEDED',
+    sourcePath: 'b',
+    targetPath: 'c',
+  })
+  store.expanded['1'] = ['c']
+  store.applyChange(1, {
+    operationId: '19',
+    kind: 'RELOCATE_WORKSPACE_ENTRY',
+    status: 'SUCCEEDED',
+    sourcePath: 'c',
+    targetPath: 'b',
+  })
+  expect(store.expanded['1']).toEqual([])
+  expect(store.lastChange['1']?.targetPath).toBe('c')
+  expect(store.resetEpochs['1']).toBe(1)
+  expect(
+    store.applyChange(1, {
+      operationId: '20',
+      kind: 'RELOCATE_WORKSPACE_ENTRY',
+      status: 'UNKNOWN',
+      sourcePath: 'b',
+      targetPath: 'c',
+    }),
+  ).toBe(false)
+  expect(store.lastChange['1']?.status).toBe('SUCCEEDED')
+})

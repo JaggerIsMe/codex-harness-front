@@ -8,7 +8,6 @@
       </div>
       <div class="toolbar-actions">
         <AppButton :icon="Refresh" :loading="loading" @click="load">刷新数据</AppButton>
-        <AppButton tone="primary" :icon="Plus" @click="createVisible = true">新建工作区</AppButton>
       </div>
     </section>
     <section class="data-card">
@@ -79,11 +78,6 @@
         >
       </div>
     </section>
-    <CreateWorkspaceDialog
-      v-model="createVisible"
-      :initial-device-id="deviceInput"
-      @created="load"
-    />
   </div>
 </template>
 
@@ -103,15 +97,13 @@ import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Plus, RefreshCw as Refresh, Search } from 'lucide-vue-next'
+import { RefreshCw as Refresh, Search } from 'lucide-vue-next'
 import { useAgentStore } from '../../stores/agent'
-import CreateWorkspaceDialog from '../../components/workspace/CreateWorkspaceDialog.vue'
 
 const route = useRoute()
 const agentStore = useAgentStore()
 const loading = ref(false)
 const loadError = ref('')
-const createVisible = ref(false)
 const keywordInput = ref('')
 const deviceInput = ref(route.query.deviceId ? String(route.query.deviceId) : '')
 const filters = ref({ keyword: '', deviceId: deviceInput.value })

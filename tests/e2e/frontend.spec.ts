@@ -70,6 +70,10 @@ test('workspace tree creates folders, uploads into selection and downloads curre
   await page.route('**/workspace-files**', async (route) => {
     const url = new URL(route.request().url())
     const endpoint = url.pathname.split('/workspace-files')[1]
+    if (endpoint === '/operations') {
+      await route.fulfill({ json: response({ items: [], nextCursor: null }) })
+      return
+    }
     if (endpoint?.endsWith('/content')) {
       await route.fulfill({
         body: 'downloaded workspace content',
@@ -2129,8 +2133,9 @@ test('conversation uploads and sends an attachment-only message and restores its
     status: 'SUCCEEDED',
     error: null,
   }
-  await page.route('**/workspace-files/downloads', (route) => {
-    expect(route.request().postDataJSON().path).toBe('requirements.txt')
+  await page.route('**/attachments/90/downloads', (route) => {
+    expect(route.request().postDataJSON().requestKey).toBeTruthy()
+    expect(route.request().postDataJSON()).not.toHaveProperty('path')
     return route.fulfill({ json: response(downloadOperation) })
   })
   await page.route('**/workspace-files/operations/101', (route) =>
@@ -2207,6 +2212,8 @@ async function previewFixtures(page: Page) {
     expect(route.request().headers()['authorization']).toBe('Bearer test-token')
     const url = new URL(route.request().url()),
       endpoint = url.pathname.split('/workspace-files')[1] || ''
+    if (endpoint === '/operations')
+      return route.fulfill({ json: response({ items: [], nextCursor: null }) })
     if (!endpoint)
       return route.fulfill({
         json: response({

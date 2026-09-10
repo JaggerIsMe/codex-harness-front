@@ -39,7 +39,6 @@ vi.mock('@/api/agent', () => ({
   getDevices: vi.fn(),
   getDeviceWorkspaceRoots: vi.fn(),
   getDeviceWorkspaces: vi.fn(),
-  createWorkspace: vi.fn(),
 }))
 vi.mock('@/api/project', () => ({ getProject: vi.fn(), getProjects: vi.fn() }))
 

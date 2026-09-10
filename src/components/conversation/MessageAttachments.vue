@@ -4,13 +4,30 @@
       <button
         type="button"
         class="max-w-full break-all text-left text-sm underline focus-visible:outline-2"
-        :disabled="busy !== null || !attachment.workspacePath"
+        :disabled="
+          busy !== null ||
+          !attachment.workspacePath ||
+          attachment.workspaceLocationState === 'MISSING' ||
+          attachment.workspaceLocationState === 'UNKNOWN'
+        "
         title="下载工作区中的当前文件，需要设备在线"
         @click="download(attachment)"
       >
         {{ attachment.fileName }} · {{ (attachment.sizeBytes / 1024).toFixed(1) }} KB
         {{ busy === attachment.id ? '（下载中）' : '' }}
       </button>
+      <p
+        v-if="attachment.workspaceLocationState === 'MISSING'"
+        class="text-xs text-muted-foreground"
+      >
+        文件已删除；历史附件关联保留。
+      </p>
+      <p v-else-if="attachment.workspaceLocationState === 'UNKNOWN'" class="text-xs text-warning">
+        文件位置待核实，暂不可下载。
+      </p>
+      <p v-else-if="attachment.workspacePath" class="break-all text-xs text-muted-foreground">
+        当前路径：{{ attachment.workspacePath }}
+      </p>
     </li>
   </ul>
   <p v-if="error" role="alert" class="mt-1 text-sm text-destructive">{{ error }}</p>
@@ -18,15 +35,13 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue'
-import {
-  prepareWorkspaceDownload,
-  waitWorkspaceOperation,
-  downloadWorkspaceContent,
-} from '@/api/workspace-file'
+import { waitWorkspaceOperation, downloadWorkspaceContent } from '@/api/workspace-file'
+import { prepareAttachmentDownload } from '@/api/attachment'
 import type { ConversationAttachment, Id } from '@/types/domain'
 const props = defineProps<{
   attachments?: ConversationAttachment[]
   projectId: Id
+  conversationId: Id
 }>()
 const busy = ref<Id | null>(null)
 const error = ref('')
@@ -34,13 +49,19 @@ const controller = new AbortController()
 const urls = new Set<string>()
 const timers = new Set<ReturnType<typeof setTimeout>>()
 async function download(attachment: ConversationAttachment) {
-  if (busy.value !== null || !attachment.workspacePath) return
+  if (
+    busy.value !== null ||
+    !attachment.workspacePath ||
+    ['MISSING', 'UNKNOWN'].includes(attachment.workspaceLocationState || 'AVAILABLE')
+  )
+    return
   busy.value = attachment.id
   error.value = ''
   try {
-    const { data } = await prepareWorkspaceDownload(
+    const { data } = await prepareAttachmentDownload(
       props.projectId,
-      attachment.workspacePath,
+      props.conversationId,
+      attachment.id,
       crypto.randomUUID(),
       controller.signal,
     )

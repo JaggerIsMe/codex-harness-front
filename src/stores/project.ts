@@ -25,6 +25,9 @@ export const useProjectStore = defineStore('project', () => {
   let listRevision = 0
   let controller: AbortController | null = null
   const pendingUpdates = new Map<string, Project>()
+  const mutationRevision = ref(0)
+  const renamedProjects = new Map<string, { name: string; revision: number }>()
+  const removedProjects = new Set<string>()
   const activityTimes = ref<Record<string, string>>({})
   const promotions = ref<Record<string, { at: number; order: number }>>({})
   const activityControllers = new Map<string, AbortController>()
@@ -96,6 +99,7 @@ export const useProjectStore = defineStore('project', () => {
 
   function ensureActivityProject(projectId: Id) {
     const id = String(projectId)
+    if (removedProjects.has(id)) return
     const known = projects.value.find((project) => String(project.id) === id)
     if (known) {
       if (!listedIds.value.includes(id) && !pinnedIds.value.includes(id))
@@ -105,9 +109,10 @@ export const useProjectStore = defineStore('project', () => {
     if (activityControllers.has(id)) return
     const request = new AbortController()
     activityControllers.set(id, request)
+    const before = mutationRevision.value
     void getProject(projectId, request.signal)
       .then((result) => {
-        if (!request.signal.aborted) upsertProject(result.data)
+        if (!request.signal.aborted) upsertProject(retainName(result.data, before))
       })
       .catch(() => {})
       .finally(() => {
@@ -130,6 +135,8 @@ export const useProjectStore = defineStore('project', () => {
     error.value = moreError.value = ''
     loading.value = loadingMore.value = false
     pendingUpdates.clear()
+    renamedProjects.clear()
+    removedProjects.clear()
     activityControllers.forEach((request) => request.abort())
     activityControllers.clear()
     activityTimes.value = {}
@@ -144,6 +151,7 @@ export const useProjectStore = defineStore('project', () => {
     controller = request
     const revision = ++listRevision
     const beforePromotion = promotionOrder
+    const beforeMutation = mutationRevision.value
     const append = nextPage > 1
     if (resetList) {
       listedIds.value = []
@@ -161,9 +169,11 @@ export const useProjectStore = defineStore('project', () => {
       })
       if (request.signal.aborted || revision !== listRevision) return []
       const result = normalizePageResult(response.data, nextPage, PAGE_SIZE)
-      const rows = result.items.map((item) =>
-        retainActivity(pendingUpdates.get(String(item.id)) || item),
-      )
+      const rows = result.items
+        .filter((item) => !removedProjects.has(String(item.id)))
+        .map((item) =>
+          retainActivity(retainName(pendingUpdates.get(String(item.id)) || item, beforeMutation)),
+        )
       const byId = new Map(projects.value.map((item) => [String(item.id), item]))
       rows.forEach((item) => byId.set(String(item.id), item))
       projects.value = [...byId.values()]
@@ -209,12 +219,14 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   async function loadProject(projectId: Id) {
+    if (removedProjects.has(String(projectId))) return null
     const changed = String(currentProject.value?.id || '') !== String(projectId)
     if (changed) currentProject.value = null
     const revision = ++projectRevision
+    const before = mutationRevision.value
     const result = await getProject(projectId)
-    if (revision !== projectRevision) return null
-    currentProject.value = result?.data || null
+    if (revision !== projectRevision || removedProjects.has(String(projectId))) return null
+    currentProject.value = result?.data ? retainName(result.data, before) : null
     if (currentProject.value) {
       upsertProject(currentProject.value)
       if (changed) promoteProject(projectId)
@@ -223,6 +235,7 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function upsertProject(project: Project) {
+    if (removedProjects.has(String(project.id))) return
     project = retainActivity(project)
     const id = String(project.id)
     if (controller) pendingUpdates.set(id, project)
@@ -230,6 +243,53 @@ export const useProjectStore = defineStore('project', () => {
     projects.value = [project, ...projects.value.filter((item) => String(item.id) !== id)]
     if (!listedIds.value.includes(id))
       pinnedIds.value = [id, ...pinnedIds.value.filter((value) => value !== id)]
+  }
+  function retainName(project: Project, before: number) {
+    const renamed = renamedProjects.get(String(project.id))
+    return renamed && renamed.revision > before
+      ? { ...project, projectName: renamed.name }
+      : project
+  }
+  function updateProjectName(project: Project) {
+    renamedProjects.set(String(project.id), {
+      name: project.projectName,
+      revision: mutationRevision.value + 1,
+    })
+    upsertProject(project)
+    mutationRevision.value++
+  }
+  function removeProject(projectId: Id) {
+    const id = String(projectId)
+    if (removedProjects.has(id)) return
+    removedProjects.add(id)
+    // Offset pages shift after removal; cancel an older page and start paging again.
+    controller?.abort()
+    controller = null
+    listRevision++
+    loading.value = loadingMore.value = false
+    activityControllers.get(id)?.abort()
+    activityControllers.delete(id)
+    pendingUpdates.delete(id)
+    renamedProjects.delete(id)
+    if (String(currentProject.value?.id) === id) {
+      projectRevision++
+      currentProject.value = null
+    }
+    projects.value = projects.value.filter((item) => String(item.id) !== id)
+    listedIds.value = listedIds.value.filter((value) => value !== id)
+    pinnedIds.value = pinnedIds.value.filter((value) => value !== id)
+    total.value = Math.max(0, total.value - 1)
+    projectCount.value = Math.max(0, projectCount.value - 1)
+    page.value = Math.min(page.value, 1)
+    delete activityTimes.value[id]
+    delete promotions.value[id]
+    mutationRevision.value++
+  }
+  function removeConversation(projectId: Id) {
+    const project = projects.value.find((item) => String(item.id) === String(projectId))
+    if (project)
+      upsertProject({ ...project, conversationCount: Math.max(0, project.conversationCount - 1) })
+    mutationRevision.value++
   }
   onScopeDispose(reset)
   return {
@@ -250,6 +310,10 @@ export const useProjectStore = defineStore('project', () => {
     setKeyword,
     loadProject,
     upsertProject,
+    updateProjectName,
+    removeProject,
+    removeConversation,
+    mutationRevision,
     promoteProject,
     updateConversationActivity,
     reset,
