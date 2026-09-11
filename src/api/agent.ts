@@ -1,12 +1,5 @@
 import { request } from './request'
-import type {
-  Device,
-  Workspace,
-  WorkspaceRoot,
-  Enrollment,
-  SkillDeployment,
-  Id,
-} from '@/types/domain'
+import type { Device, Workspace, WorkspaceRoot, Enrollment, Id } from '@/types/domain'
 export function getDevices() {
   return request<Device[]>('get', `/devices`)
 }
@@ -21,10 +14,4 @@ export function getDeviceWorkspaces(deviceId: Id) {
 }
 export function getDeviceWorkspaceRoots(deviceId: Id) {
   return request<WorkspaceRoot[]>('get', `/devices/${deviceId}/workspace-roots`)
-}
-export function deploySkill(scopeType: string, targetId: Id, versionId: Id) {
-  return request<SkillDeployment>('post', `/skill-deployments`, { scopeType, targetId, versionId })
-}
-export function removeSkill(deploymentId: Id) {
-  return request<SkillDeployment>('post', `/skill-deployments/${deploymentId}/remove`)
 }

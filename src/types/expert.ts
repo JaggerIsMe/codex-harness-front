@@ -4,6 +4,7 @@ export interface Expert {
   name: string
   description: string
   status: 'DRAFT' | 'PUBLISHED' | 'UNPUBLISHED' | 'DISABLED'
+  draftChanged: boolean
   publishedVersionId: Id | null
   revision: number
   systemPrompt: string | null

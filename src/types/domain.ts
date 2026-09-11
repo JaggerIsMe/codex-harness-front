@@ -165,23 +165,6 @@ export interface SkillVersion {
   status: string
   createdAt: string
 }
-export interface SkillDeployment {
-  id: number
-  deviceId: number
-  skillVersionId: number
-  skillId: number
-  skillName: string
-  version: string
-  deviceName: string
-  installStatus: string
-  errorMessage: string
-  requestedAt: string
-  installedAt: string
-  updatedAt: string
-  scopeType: string
-  projectId: number
-  projectName: string
-}
 
 export interface ApiResponse<T> {
   status: 'success' | 'error'
@@ -240,10 +223,6 @@ export interface SearchParams {
   keyword?: string
   status?: string
   scopeType?: string
-}
-export interface DeploymentResult {
-  deployments: SkillDeployment[]
-  failedCount: number
 }
 export type MessageType =
   | 'TEXT'

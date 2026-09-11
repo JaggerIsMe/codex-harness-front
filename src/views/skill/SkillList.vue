@@ -4,22 +4,29 @@
       <div>
         <span class="page-kicker">SKILL REGISTRY</span>
         <h2>Skill 管理</h2>
-        <p>统一管理版本包，并将经过校验的 Skill 下发到在线执行机器。</p>
+        <p>统一管理版本包，将指定 Skill 版本分配到专家草稿。</p>
       </div>
       <div class="toolbar-actions">
         <AppButton :disabled="loadingBatch" @click="openBatch('CREATE')">批量上传</AppButton>
         <AppButton :disabled="loadingBatch" @click="openBatch('UPDATE')"
           >批量更新{{ selectedSkillIds.length ? `（${selectedSkillIds.length}）` : '' }}</AppButton
         >
-        <AppButton :icon="Promotion" @click="openDeploy()">下发 Skill</AppButton
+        <AppButton
+          :disabled="loadingAssignment || !selectedSkillIds.length"
+          @click="openBatchAssign"
+        >
+          批量分配{{ selectedSkillIds.length ? `（${selectedSkillIds.length}）` : '' }}
+        </AppButton>
+        <AppButton :icon="Promotion" :disabled="loadingAssignment" @click="openAssign()"
+          >分配专家</AppButton
         ><AppButton tone="primary" :icon="Upload" @click="openUpload()">上传 Skill</AppButton>
       </div>
     </section>
 
-    <Tabs v-model="activeTab" class="skill-tabs" @update:model-value="handleTabChange"
+    <Tabs v-model="activeTab" class="skill-tabs"
       ><TabsList
         ><TabsTrigger value="registry">Skill 仓库</TabsTrigger
-        ><TabsTrigger value="deployments">下发记录</TabsTrigger></TabsList
+        ><TabsTrigger value="assignments">分配记录</TabsTrigger></TabsList
       >
       <TabsContent value="registry"
         ><p v-if="skillError" role="alert" class="mb-3 text-sm text-destructive">
@@ -150,8 +157,8 @@
                                       :disabled="
                                         row.status !== 'ENABLED' || version.status !== 'ACTIVE'
                                       "
-                                      @click="openDeploy(version.id)"
-                                      >下发</AppButton
+                                      @click="openAssign(version.id)"
+                                      >分配</AppButton
                                     ><AppButton
                                       v-if="versionIndex === 0"
                                       link
@@ -185,111 +192,10 @@
         </section>
       </TabsContent>
 
-      <TabsContent value="deployments"
-        ><p v-if="deploymentError" role="alert" class="mb-3 text-sm text-destructive">
-          {{ deploymentError }}
-        </p>
-        <section class="data-card">
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-3 search-row">
-            <div>
-              <AppInput
-                v-model="deploymentSearch.keyword"
-                clearable
-                placeholder="搜索 Skill、机器或项目"
-                @keyup.enter="loadDeployments"
-              />
-            </div>
-            <div>
-              <AppSelect
-                v-model="deploymentSearch.scopeType"
-                clearable
-                placeholder="全部作用域"
-                @keyup.enter="loadDeployments"
-                ><option value="GLOBAL">全局</option>
-                <option value="PROJECT">项目</option></AppSelect
-              >
-            </div>
-            <div>
-              <AppSelect
-                v-model="deploymentSearch.status"
-                clearable
-                placeholder="全部状态"
-                @keyup.enter="loadDeployments"
-                ><option v-for="status in deploymentStatuses" :key="status" :value="status">
-                  {{ deploymentStatusLabel(status) }}
-                </option></AppSelect
-              >
-            </div>
-            <div class="search-actions">
-              <AppButton tone="primary" :icon="Search" @click="loadDeployments">查询</AppButton
-              ><AppButton @click="resetDeployments">重置</AppButton>
-            </div>
-          </div>
-          <div class="table-area">
-            <Table
-              ><TableHeader
-                ><TableRow
-                  ><TableHead style="min-width: 170px">Skill</TableHead
-                  ><TableHead style="min-width: 180px">执行机器</TableHead
-                  ><TableHead style="min-width: 170px">作用域</TableHead
-                  ><TableHead style="min-width: 120px">状态</TableHead
-                  ><TableHead style="min-width: 230px">错误信息</TableHead
-                  ><TableHead style="min-width: 180px">请求时间</TableHead
-                  ><TableHead style="min-width: 140px">操作</TableHead></TableRow
-                ></TableHeader
-              ><TableBody
-                ><TableRow v-if="loadingDeployments"
-                  ><TableCell :colspan="7" class="text-center">加载中…</TableCell></TableRow
-                ><template v-for="row in deployments" :key="row.id"
-                  ><TableRow
-                    ><TableCell
-                      ><div class="primary-cell">
-                        <strong>{{ row.skillName }}</strong
-                        ><span>{{ row.version }}</span>
-                      </div></TableCell
-                    ><TableCell>{{ row.deviceName }}</TableCell
-                    ><TableCell
-                      ><div class="primary-cell">
-                        <AppBadge :tone="row.scopeType === 'GLOBAL' ? 'primary' : 'warning'">{{
-                          row.scopeType === 'GLOBAL' ? '全局' : '项目'
-                        }}</AppBadge
-                        ><span v-if="row.projectName">{{ row.projectName }}</span>
-                      </div></TableCell
-                    ><TableCell
-                      ><AppBadge :tone="deploymentStatusType(row.installStatus)">{{
-                        deploymentStatusLabel(row.installStatus)
-                      }}</AppBadge></TableCell
-                    ><TableCell>{{ row.errorMessage || '--' }}</TableCell
-                    ><TableCell>{{ formatDate(row.requestedAt) }}</TableCell
-                    ><TableCell
-                      ><AppButton
-                        v-if="row.installStatus === 'FAILED'"
-                        link
-                        tone="primary"
-                        @click="retry(row)"
-                        >重试</AppButton
-                      ><AppButton
-                        link
-                        tone="danger"
-                        :disabled="!['INSTALLED', 'FAILED'].includes(row.installStatus)"
-                        :loading="removingId === row.id"
-                        @click="remove(row)"
-                        >移除</AppButton
-                      ></TableCell
-                    ></TableRow
-                  ></template
-                ><TableRow v-if="!deployments.length && !loadingDeployments"
-                  ><TableCell :colspan="7" class="text-center text-muted-foreground"
-                    >暂无下发记录</TableCell
-                  ></TableRow
-                ></TableBody
-              ></Table
-            >
-          </div>
-        </section>
-      </TabsContent>
+      <TabsContent value="assignments"
+        ><SkillAssignmentHistory :revision="assignmentRevision"
+      /></TabsContent>
     </Tabs>
-
     <BatchUploadSkillDialog
       v-model="batchVisible"
       :initial-mode="batchMode"
@@ -299,18 +205,19 @@
     />
     <UploadSkillDialog v-model="uploadVisible" :skill="selectedSkill" @uploaded="handleUploaded" />
     <EditSkillDialog v-model="editVisible" :skill="selectedSkill" @saved="handleSaved" />
-    <InstallSkillDialog
-      v-model="deployVisible"
-      :skills="skills"
+    <AssignSkillExpertsDialog
+      v-model="assignVisible"
+      :skills="assignmentSkills"
       :initial-version-id="initialVersionId"
-      @deployed="handleDeployed"
+      :initial-version-ids="initialVersionIds"
+      @completed="handleAssigned"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import type { Id, Skill, SkillVersion, SkillDeployment, DeploymentResult } from '@/types/domain'
+import type { Skill, SkillVersion } from '@/types/domain'
 import {
   Table,
   TableHeader,
@@ -323,35 +230,27 @@ import AppBadge from '@/components/common/AppBadge.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import BatchUploadSkillDialog from '@/components/skill/BatchUploadSkillDialog.vue'
 import type { SkillImportMode, SkillImportSubmission } from '@/types/skill-import'
 import { Send as Promotion, Search, Upload } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { confirmAction } from '@/lib/confirm'
-import { deploySkill, removeSkill } from '../../api/agent'
-import {
-  downloadSkillVersion,
-  getSkillDeployments,
-  getSkills,
-  updateSkillVersionStatus,
-} from '../../api/skill'
-import { useAgentStore } from '../../stores/agent'
+import { downloadSkillVersion, getSkills, updateSkillVersionStatus } from '../../api/skill'
 import EditSkillDialog from '../../components/skill/EditSkillDialog.vue'
-import InstallSkillDialog from '../../components/skill/InstallSkillDialog.vue'
+import AssignSkillExpertsDialog from '@/components/skill/AssignSkillExpertsDialog.vue'
+import SkillAssignmentHistory from '@/components/skill/SkillAssignmentHistory.vue'
 import UploadSkillDialog from '../../components/skill/UploadSkillDialog.vue'
 
-const agentStore = useAgentStore()
 const activeTab = ref('registry')
 const skillError = ref('')
-const deploymentError = ref('')
 const skills = ref<Skill[]>([])
-const deployments = ref<SkillDeployment[]>([])
 const loadingSkills = ref(false)
-const loadingDeployments = ref(false)
 const uploadVisible = ref(false)
 const editVisible = ref(false)
-const deployVisible = ref(false)
+const assignVisible = ref(false)
+const assignmentRevision = ref(0)
+const assignmentSkills = ref<Skill[]>([])
 const selectedSkillIds = ref<number[]>([])
 const batchVisible = ref(false)
 const batchMode = ref<SkillImportMode>('CREATE')
@@ -360,10 +259,9 @@ const batchSelectedSkills = ref<Skill[]>([])
 const loadingBatch = ref(false)
 const selectedSkill = ref<Skill | null>(null)
 const initialVersionId = ref<number | null>(null)
-const removingId = ref<Id | null>(null)
+const initialVersionIds = ref<number[] | undefined>()
+const loadingAssignment = ref(false)
 const skillSearch = reactive({ keyword: '', status: '' })
-const deploymentSearch = reactive({ keyword: '', status: '', scopeType: '' })
-const deploymentStatuses = ['INSTALLING', 'INSTALLED', 'REMOVING', 'REMOVED', 'FAILED']
 
 function selectAllSkills(event: Event) {
   selectedSkillIds.value = (event.target as HTMLInputElement).checked
@@ -405,28 +303,9 @@ async function loadSkills() {
     loadingSkills.value = false
   }
 }
-async function loadDeployments() {
-  loadingDeployments.value = true
-  deploymentError.value = ''
-  try {
-    const response = await getSkillDeployments({ ...deploymentSearch })
-    deployments.value = response.data || []
-  } catch (error) {
-    deploymentError.value = error instanceof Error ? error.message : '下发记录加载失败'
-  } finally {
-    loadingDeployments.value = false
-  }
-}
 function resetSkills() {
   Object.assign(skillSearch, { keyword: '', status: '' })
   loadSkills()
-}
-function resetDeployments() {
-  Object.assign(deploymentSearch, { keyword: '', status: '', scopeType: '' })
-  loadDeployments()
-}
-function handleTabChange(name: string | number) {
-  if (name === 'deployments') loadDeployments()
 }
 function openUpload(skill: Skill | null = null) {
   selectedSkill.value = skill
@@ -436,9 +315,51 @@ function openEdit(skill: Skill) {
   selectedSkill.value = skill
   editVisible.value = true
 }
-function openDeploy(versionId: number | null = null) {
-  initialVersionId.value = versionId
-  deployVisible.value = true
+async function openAssign(versionId: number | null = null) {
+  loadingAssignment.value = true
+  try {
+    assignmentSkills.value = (await getSkills({})).data
+    initialVersionId.value = versionId
+    initialVersionIds.value = undefined
+    assignVisible.value = true
+  } catch (error) {
+    skillError.value = error instanceof Error ? error.message : 'Skill 加载失败'
+  } finally {
+    loadingAssignment.value = false
+  }
+}
+async function openBatchAssign() {
+  if (loadingAssignment.value) return
+  if (!selectedSkillIds.value.length || selectedSkillIds.value.length > 30) {
+    skillError.value = '批量分配请选择 1～30 个 Skill'
+    return
+  }
+  loadingAssignment.value = true
+  skillError.value = ''
+  try {
+    const all = (await getSkills({})).data
+    const chosen = selectedSkillIds.value.map((id) => all.find((s) => s.id === id))
+    if (
+      chosen.some(
+        (s) => !s || s.status !== 'ENABLED' || !s.versions.some((v) => v.status === 'ACTIVE'),
+      )
+    ) {
+      skillError.value = '所选 Skill 中存在已停用、已删除或没有激活版本的项，请调整选择'
+      return
+    }
+    assignmentSkills.value = all
+    initialVersionId.value = null
+    initialVersionIds.value = chosen.map((s) => s!.versions.find((v) => v.status === 'ACTIVE')!.id)
+    assignVisible.value = true
+  } catch (error) {
+    skillError.value = error instanceof Error ? error.message : 'Skill 加载失败'
+  } finally {
+    loadingAssignment.value = false
+  }
+}
+function handleAssigned() {
+  assignmentRevision.value++
+  toast.success('分配处理完成，请查看逐项结果；成功项已更新专家草稿')
 }
 function handleUploaded() {
   toast.success('Skill 版本上传成功')
@@ -448,17 +369,13 @@ function handleSaved() {
   toast.success('Skill 已更新')
   loadSkills()
 }
-function handleDeployed(result: DeploymentResult) {
-  toast.success(
-    `已向 ${result.deployments.length} 台机器下发${result.failedCount ? `，${result.failedCount} 台失败` : ''}`,
-  )
-  activeTab.value = 'deployments'
-  loadDeployments()
-}
 async function toggleVersion(skill: Skill, version: SkillVersion) {
   if (
     version.status === 'ACTIVE' &&
-    !(await confirmAction('停用后将无法下发此版本，是否继续？', '停用 Skill 版本'))
+    !(await confirmAction(
+      '停用后将无法分配此版本，依赖该版本的专家后续使用也会受影响，是否继续？',
+      '停用 Skill 版本',
+    ))
   )
     return
   const status = version.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
@@ -475,30 +392,6 @@ async function download(skill: Skill, version: SkillVersion) {
   anchor.click()
   URL.revokeObjectURL(url)
 }
-async function retry(row: SkillDeployment) {
-  await deploySkill(
-    row.scopeType,
-    row.scopeType === 'PROJECT' ? row.projectId : row.deviceId,
-    row.skillVersionId,
-  )
-  toast.success('已重新下发')
-  loadDeployments()
-}
-async function remove(row: SkillDeployment) {
-  if (removingId.value) return
-  const target =
-    row.scopeType === 'PROJECT' ? `项目 ${row.projectName}` : `执行机器 ${row.deviceName}`
-  if (!(await confirmAction(`确认从${target}移除 ${row.skillName} ${row.version}？`, '移除 Skill')))
-    return
-  removingId.value = row.id
-  try {
-    await removeSkill(row.id)
-    toast.success('移除命令已下发')
-    loadDeployments()
-  } finally {
-    removingId.value = null
-  }
-}
 function formatSize(bytes: number) {
   if (!Number.isFinite(bytes)) return '--'
   if (bytes < 1024) return `${bytes} B`
@@ -508,39 +401,6 @@ function formatSize(bytes: number) {
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '--'
 }
-function deploymentStatusLabel(status: string) {
-  return (
-    (
-      {
-        INSTALLING: '安装中',
-        INSTALLED: '已安装',
-        REMOVING: '移除中',
-        REMOVED: '已移除',
-        FAILED: '失败',
-      } as Record<string, string>
-    )[status] || status
-  )
-}
-function deploymentStatusType(status: string) {
-  return (
-    (
-      {
-        INSTALLED: 'success',
-        FAILED: 'danger',
-        REMOVED: 'info',
-        INSTALLING: 'warning',
-        REMOVING: 'warning',
-      } as Record<string, string>
-    )[status] || 'info'
-  )
-}
-watch(
-  () => agentStore.eventRevision,
-  () => {
-    if (['SKILL_INSTALL_RESULT', 'SKILL_REMOVE_RESULT'].includes(agentStore.lastEvent?.type || ''))
-      loadDeployments()
-  },
-)
 onMounted(loadSkills)
 </script>
 

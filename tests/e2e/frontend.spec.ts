@@ -1376,17 +1376,7 @@ async function fixtures(page: Page, authenticated = true) {
         ],
       }
     else if (path === '/skills') data = [skill]
-    else if (path === '/skill-deployments')
-      data = [
-        {
-          id: 9,
-          skillName: 'code-review',
-          version: '1.0',
-          deviceName: '测试设备',
-          scopeType: 'GLOBAL',
-          installStatus: 'INSTALLED',
-        },
-      ]
+    else if (path === '/skill-expert-assignments') data = []
     await route.fulfill({ json: { status: 'success', code: 200, info: '请求成功', data } })
   })
   await page.routeWebSocket('**/ws/client?*', () => {})
@@ -3210,53 +3200,76 @@ test.describe('workspace sidebar pagination', () => {
     expect(state.errors).toEqual([])
   })
 
-  test('Skill project picker searches and deploys to a project beyond its first page', async ({
+  test('Skill expert assignment previews replacement and requires confirmation', async ({
     page,
   }) => {
-    const state = await paginationFixtures(page)
-    let deployment: Record<string, unknown> | null = null
-    await page.route('**/api/v1/skill-deployments', (route) => {
-      if (route.request().method() === 'POST') deployment = route.request().postDataJSON()
-      const result = {
-        id: 99,
-        skillName: 'code-review',
-        version: '1.0',
-        deviceName: '测试设备',
-        projectName: '后页项目25',
-        scopeType: 'PROJECT',
-        installStatus: 'INSTALLED',
+    const envelope = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
+    await fixtures(page)
+    let assigned = false
+    const candidate = {
+      expertId: 10,
+      name: '审查专家',
+      status: 'PUBLISHED',
+      revision: 1,
+      draftVersionId: 4,
+      draftVersion: '0.9',
+      publishedVersion: '0.9',
+      action: 'REPLACE',
+      reason: '',
+    }
+    const result = {
+      batchId: 'assignment-fixture',
+      skillName: 'code-review',
+      version: '1.0',
+      started: false,
+      complete: false,
+      items: [] as unknown[],
+    }
+    await page.route('**/api/v1/skills/*/versions/*/expert-candidates?*', (route) =>
+      route.fulfill({ json: envelope({ items: [candidate], total: 1, page: 1, size: 20 }) }),
+    )
+    await page.route('**/api/v1/skill-expert-assignments/**', (route) => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/preview'))
+        return route.fulfill({
+          json: envelope({
+            batchId: result.batchId,
+            skillName: result.skillName,
+            version: result.version,
+            items: [candidate],
+            expiresAt: '2099-01-01',
+          }),
+        })
+      if (path.endsWith('/commit')) {
+        assigned = true
+        result.started = true
+        result.complete = true
+        result.items = [
+          {
+            expertId: 10,
+            name: candidate.name,
+            action: 'REPLACE',
+            previousVersionId: 4,
+            versionId: 6,
+            status: 'SUCCESS',
+            message: '已更新草稿，发布后生效',
+            revision: 2,
+          },
+        ]
       }
-      return route.fulfill({
-        json: {
-          status: 'success',
-          code: 200,
-          info: '',
-          data: route.request().method() === 'POST' ? result : deployment ? [result] : [],
-        },
-      })
+      return route.fulfill({ json: envelope(result) })
     })
     await page.goto('/skills')
-    await page.getByRole('button', { name: '下发 Skill', exact: true }).click()
+    await page.getByRole('button', { name: '分配专家', exact: true }).click()
     const dialog = page.getByRole('dialog')
-    await dialog.getByRole('combobox', { name: '作用域', exact: true }).selectOption('PROJECT')
-    const selection = dialog.getByRole('combobox', {
-      name: '选择工作区已就绪且 Agent 在线的项目',
-      exact: true,
-    })
-    await expect(selection.locator('option:not([disabled])')).toHaveCount(20)
-    await dialog.getByRole('button', { name: '加载更多项目', exact: true }).click()
-    await expect(selection.locator('option:not([disabled])')).toHaveCount(25)
-    await dialog.getByPlaceholder('搜索目标项目').fill('后页项目25')
-    await dialog.getByPlaceholder('搜索目标项目').press('Enter')
-    await expect(selection.locator('option:not([disabled])')).toHaveCount(1)
-    await selection.selectOption('27')
-    await dialog.getByRole('combobox', { name: '选择已激活版本', exact: true }).selectOption('6')
-    await dialog.getByRole('button', { name: '下发到项目', exact: true }).click()
-    await expect(dialog).toHaveCount(0)
-    expect(deployment).toEqual({ scopeType: 'PROJECT', targetId: 27, versionId: 6 })
-    expect(state.reads.every((read) => read.size === (read.kind === 'projects' ? 20 : 10))).toBe(
-      true,
-    )
-    expect(state.errors).toEqual([])
+    await dialog.getByRole('combobox', { name: 'Skill 版本', exact: true }).selectOption('6')
+    await dialog.getByRole('checkbox', { name: '选择 审查专家', exact: true }).check()
+    await dialog.getByRole('button', { name: '预览分配', exact: true }).click()
+    await expect(dialog.getByText('审查专家：0.9 → 1.0', { exact: false })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '确认分配', exact: true })).toBeDisabled()
+    await dialog.getByRole('checkbox', { name: '已核对新增与替换内容，确认更新专家草稿' }).check()
+    await dialog.getByRole('button', { name: '确认分配', exact: true }).click()
+    await expect(dialog.getByText('审查专家：已更新草稿，发布后生效')).toBeVisible()
+    expect(assigned).toBe(true)
   })
 })

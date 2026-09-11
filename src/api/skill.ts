@@ -7,19 +7,9 @@ import type {
   SkillImportCommit,
   SkillImportSubmission,
 } from '@/types/skill-import'
-import type {
-  Skill,
-  SkillVersion,
-  SkillDeployment,
-  Id,
-  SearchParams,
-  SkillInput,
-} from '@/types/domain'
+import type { Skill, SkillVersion, Id, SearchParams, SkillInput } from '@/types/domain'
 export function getSkills(params: SearchParams, signal?: AbortSignal) {
   return request<Skill[]>('get', `/skills`, undefined, { params, signal })
-}
-export function getSkillDeployments(params: SearchParams) {
-  return request<SkillDeployment[]>('get', `/skill-deployments`, undefined, { params })
 }
 export function createSkill(data: FormData) {
   return request<Skill>('post', `/skills`, data, { timeout: 60000 })

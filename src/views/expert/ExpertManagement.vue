@@ -37,6 +37,7 @@
             </td>
             <td class="p-4">
               <span class="whitespace-nowrap">{{ labels[row.status] }}</span>
+              <span v-if="row.draftChanged" class="ml-2 text-amber-700">有未发布修改</span>
               <div v-if="row.skillUpdates?.length" class="mt-2 space-y-1 text-sm text-destructive">
                 <strong>Skill 已更新，需发布新专家版本</strong>
                 <p v-for="update in row.skillUpdates" :key="update.skillId">

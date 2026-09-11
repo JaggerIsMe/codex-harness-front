@@ -215,7 +215,7 @@ async function openAndSend() {
 it('leaves Expert Skill preparation and receives the complete reply with both real store listeners', async () => {
   const { store, navigation, agent, socket } = await openAndSend()
   navigation.expanded[3] = false
-  socket.receive({ type: 'SKILL_INSTALL_RESULT', deviceId: 1, payload: { conversationId: 4 } })
+  socket.receive({ type: 'WORKSPACES_CHANGED', deviceId: 1, payload: { conversationId: 4 } })
   backendTurn = { id: 7, status: 'RUNNING', preparationPhase: null, codexTurnId: 'codex-turn' }
   socket.receive({
     type: 'TURN_STARTED',
@@ -249,7 +249,7 @@ it('keeps Turn start and every streamed fragment arriving while an older prepara
     () => new Promise((resolve) => (resolveSnapshot = resolve)),
   )
   const refreshing = store.refreshCurrent()
-  socket.receive({ type: 'SKILL_INSTALL_RESULT', deviceId: 1, payload: { conversationId: 4 } })
+  socket.receive({ type: 'WORKSPACES_CHANGED', deviceId: 1, payload: { conversationId: 4 } })
   backendTurn = { id: 7, status: 'RUNNING', preparationPhase: null }
   socket.receive({ type: 'TURN_STARTED', payload: { conversationId: 4, turnId: 7 } })
   for (let cursor = 1; cursor <= 300; cursor++) socket.receive(answer(cursor, 'x'))
