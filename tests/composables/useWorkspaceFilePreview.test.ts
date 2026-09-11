@@ -85,7 +85,7 @@ function setup() {
 }
 beforeEach(() => {
   vi.resetAllMocks()
-  auth.token = 'token'
+  auth.sessionId = 'session'
   directory.projects = { '1': { '': { generation: '1', online: true } } }
   directory.lastChange = {}
   vi.mocked(api.prepareWorkspaceDownload).mockImplementation(async (_, path) =>
@@ -187,7 +187,7 @@ it('clears content and aborts when changing conversations, logging out or losing
   expect(signal.aborted).toBe(true)
   expect(state.file.value).toBeNull()
   await state.open(entry('a.txt'))
-  auth.token = ''
+  auth.sessionId = null
   expect(state.blob.value).toBeNull()
   await state.open(entry('a.txt'))
   vi.mocked(api.downloadWorkspaceContent).mockRejectedValueOnce(new ApiError('无权限', 403))

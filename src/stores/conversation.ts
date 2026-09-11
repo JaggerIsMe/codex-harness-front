@@ -29,6 +29,7 @@ import {
 import { useAgentStore } from './agent.ts'
 import { useNavigationStore } from './navigation'
 import { mutationKind } from '@/utils/workspaceFileActions'
+import { captureAuthSession, isCurrentAuthSession } from '@/utils/auth'
 const ACTIVE_TURN_STATUSES = ['CREATED', 'RUNNING', 'WAITING_APPROVAL']
 const TERMINAL_EVENT_STATUSES: Record<string, string> = {
   TURN_COMPLETED: 'COMPLETED',
@@ -60,6 +61,12 @@ export const useConversationStore = defineStore('conversation', () => {
   let openRevision = 0
   let realtimeRefreshTimer: number | null = null
   let listRevision = 0
+  let resetRevision = 0
+  function operationGuard() {
+    const revision = resetRevision
+    const session = captureAuthSession()
+    return () => revision === resetRevision && isCurrentAuthSession(session)
+  }
   const hasMoreMessages = ref(false)
   const loadingOlder = ref(false)
   const olderMessagesError = ref('')
@@ -145,6 +152,7 @@ export const useConversationStore = defineStore('conversation', () => {
     clearCurrent()
   }
   function reset() {
+    resetRevision += 1
     stopListening()
     listRevision += 1
     currentProjectId.value = null
@@ -403,6 +411,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
   async function startNewTurn(input: TurnInput) {
     if (!canStartTurn.value || sending.value) return null
+    const isCurrent = operationGuard()
     sending.value = true
     const conversation = currentConversation.value!
     const conversationId = conversation.id
@@ -412,6 +421,7 @@ export const useConversationStore = defineStore('conversation', () => {
     turnError.value = ''
     try {
       const result = await startTurn(projectId, conversationId, input)
+      if (!isCurrent()) return null
       if (result?.data) navigation.recordTurn(conversationId, result.data)
       if (currentConversation.value?.id !== conversationId || currentProjectId.value !== projectId)
         return null
@@ -419,22 +429,23 @@ export const useConversationStore = defineStore('conversation', () => {
       await refreshCurrent({ silent: true }).catch(() => undefined)
       return result?.data || null
     } catch (error) {
-      if (!isAborted(error))
+      if (isCurrent() && !isAborted(error))
         navigation.markIssue(
           conversationId,
           error instanceof Error ? error.message : '消息发送失败',
           'send',
         )
-      if (!isAborted(error) && currentConversation.value?.id === conversationId)
+      if (isCurrent() && !isAborted(error) && currentConversation.value?.id === conversationId)
         turnError.value = error instanceof Error ? error.message : '消息发送失败'
       throw error
     } finally {
-      sending.value = false
+      if (isCurrent()) sending.value = false
     }
   }
 
   async function interruptCurrentTurn() {
     if (!currentConversation.value || !canInterrupt.value || interrupting.value) return
+    const isCurrent = operationGuard()
     interrupting.value = true
     try {
       await interruptTurn(
@@ -442,20 +453,21 @@ export const useConversationStore = defineStore('conversation', () => {
         currentConversation.value.id,
         currentTurn.value!.id,
       )
-      await refreshCurrent({ silent: true })
+      if (isCurrent()) await refreshCurrent({ silent: true })
     } finally {
-      interrupting.value = false
+      if (isCurrent()) interrupting.value = false
     }
   }
 
   async function decideApproval(approval: Approval, decision: Decision) {
     if (!approval || resolvingId.value) return
+    const isCurrent = operationGuard()
     resolvingId.value = approval.id
     try {
       await resolveApproval(approval.id, decision)
-      await refreshCurrent({ silent: true })
+      if (isCurrent()) await refreshCurrent({ silent: true })
     } finally {
-      resolvingId.value = null
+      if (isCurrent()) resolvingId.value = null
     }
   }
 

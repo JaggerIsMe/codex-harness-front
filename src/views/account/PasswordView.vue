@@ -42,6 +42,7 @@ import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { captureAuthSession } from '@/utils/auth'
 const auth = useAuthStore()
 const router = useRouter()
 const currentPassword = ref('')
@@ -61,12 +62,13 @@ async function submit() {
   }
   saving.value = true
   error.value = ''
+  const session = captureAuthSession()
   try {
-    await changePassword(currentPassword.value, newPassword.value)
+    await changePassword(currentPassword.value, newPassword.value, session)
     currentPassword.value = ''
     newPassword.value = ''
     confirmation.value = ''
-    auth.clear()
+    if (!(await auth.clear(session))) return
     toast.success('密码已修改，请重新登录')
     await router.replace('/login')
   } catch (cause) {

@@ -1,9 +1,16 @@
 import type { Device, Workspace, WorkspaceRoot, Id, RealtimeEvent } from '@/types/domain'
 import { parseRealtimeEvent } from '../utils/realtime'
-import { computed, ref, onScopeDispose } from 'vue'
+import { computed, ref, onScopeDispose, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { getDevices, getDeviceWorkspaceRoots, getDeviceWorkspaces } from '../api/agent.ts'
-import { getAccessToken } from '../utils/auth.ts'
+import {
+  captureAuthSession,
+  getAccessToken,
+  isCurrentAuthSession,
+  isCurrentCredential,
+} from '../utils/auth.ts'
+import { invalidateAuthSession } from '../utils/authSession'
+import { renewAuthSession } from '@/utils/sessionRenewal'
 import { getSocketTicket } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 const RECONNECT_DELAY = 3000
@@ -19,6 +26,7 @@ function getClientSocketUrl(token: string) {
 }
 
 export const useAgentStore = defineStore('agent', () => {
+  const auth = useAuthStore()
   const devices = ref<Device[]>([])
   const workspacesByDevice = ref<Record<string, Workspace[]>>({})
   const workspaceRootsByDevice = ref<Record<string, WorkspaceRoot[]>>({})
@@ -27,7 +35,8 @@ export const useAgentStore = defineStore('agent', () => {
   const eventRevision = ref(0)
   let socket: WebSocket | null = null
   let reconnectTimer: number | null = null
-  let intentionallyClosed = false
+  let intentionallyClosed = true
+  let connectionRevision = 0
   let removeListeners: (() => void) | null = null
   let ticketController: AbortController | null = null
   let revision = 0
@@ -85,7 +94,7 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function scheduleReconnect() {
-    if (intentionallyClosed || reconnectTimer) return
+    if (intentionallyClosed || reconnectTimer || !getAccessToken() || auth.signingOut) return
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null
       connect()
@@ -93,9 +102,10 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   async function connect() {
-    const token = getAccessToken()
+    const session = captureAuthSession()
     if (
-      !token ||
+      !session.token ||
+      auth.signingOut ||
       ticketController ||
       !useAuthStore().can('workspace:use') ||
       socket?.readyState === WebSocket.OPEN ||
@@ -111,7 +121,7 @@ export const useAgentStore = defineStore('agent', () => {
       const result = await getSocketTicket(controller.signal)
       ticket = result.data.ticket
     } catch {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && isCurrentAuthSession(session)) {
         connectionState.value = 'DISCONNECTED'
         scheduleReconnect()
       }
@@ -119,14 +129,15 @@ export const useAgentStore = defineStore('agent', () => {
     } finally {
       if (ticketController === controller) ticketController = null
     }
-    if (controller.signal.aborted || intentionallyClosed || getAccessToken() !== token) return
+    if (controller.signal.aborted || intentionallyClosed || !isCurrentCredential(session)) return
     const connection = new WebSocket(getClientSocketUrl(ticket))
     socket = connection
     const onOpen = () => {
-      if (socket === connection) connectionState.value = 'CONNECTED'
+      if (socket === connection && isCurrentAuthSession(session))
+        connectionState.value = 'CONNECTED'
     }
     const onMessage = (event: MessageEvent<string>) => {
-      if (socket !== connection) return
+      if (socket !== connection || !isCurrentAuthSession(session)) return
       const parsed = parseRealtimeEvent(event.data)
       if (!parsed) return
       lastEvent.value = parsed
@@ -147,12 +158,34 @@ export const useAgentStore = defineStore('agent', () => {
       removeListeners?.()
       socket = null
       connectionState.value = 'DISCONNECTED'
-      if (event.code === 1008)
-        void useAuthStore()
-          .loadProfile()
-          .then(() => connect())
-          .catch(() => {})
-      else scheduleReconnect()
+      if (!isCurrentAuthSession(session)) return
+      if (!isCurrentCredential(session)) {
+        void connect()
+        return
+      }
+      if (event.code === 4002) {
+        disconnect()
+        const renewingConnection = connectionRevision
+        void renewAuthSession(session, true)
+          .then(() => {
+            if (connectionRevision === renewingConnection && isCurrentAuthSession(session))
+              void connect()
+          })
+          .catch(() => {
+            if (connectionRevision === renewingConnection && isCurrentAuthSession(session)) {
+              intentionallyClosed = false
+              scheduleReconnect()
+            }
+          })
+        return
+      }
+      if (event.code === 4001 || event.code === 1008) {
+        disconnect()
+        void invalidateAuthSession(
+          session,
+          event.code === 4001 ? 'session-replaced' : 'session-expired',
+        )
+      } else scheduleReconnect()
     }
     const onError = () => {
       if (socket === connection) connection.close()
@@ -172,6 +205,7 @@ export const useAgentStore = defineStore('agent', () => {
 
   function disconnect() {
     intentionallyClosed = true
+    connectionRevision += 1
     ticketController?.abort()
     ticketController = null
     if (reconnectTimer) window.clearTimeout(reconnectTimer)
@@ -182,6 +216,22 @@ export const useAgentStore = defineStore('agent', () => {
     connectionState.value = 'DISCONNECTED'
   }
 
+  watch([() => auth.sessionId, () => auth.signingOut], reset, { flush: 'sync' })
+  watch(
+    [() => auth.sessionId, () => auth.credentialGeneration],
+    ([sid, generation], [previousId, previousGeneration]) => {
+      if (
+        sid === previousId &&
+        generation !== previousGeneration &&
+        !auth.signingOut &&
+        !intentionallyClosed
+      ) {
+        disconnect()
+        void connect()
+      }
+    },
+    { flush: 'post' },
+  )
   onScopeDispose(disconnect)
 
   return {

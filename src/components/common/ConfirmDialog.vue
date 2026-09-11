@@ -1,25 +1,25 @@
 <template>
   <AlertDialog
-    :open="Boolean(confirmation)"
+    v-for="item in confirmation ? [confirmation] : []"
+    :key="item.id"
+    :open="true"
     @update:open="
       (open) => {
-        if (!open) finishConfirmation(false)
+        if (!open) finishConfirmation(false, item)
       }
     "
   >
     <AlertDialogContent
       ><AlertDialogHeader
-        ><AlertDialogTitle>{{ confirmation?.title }}</AlertDialogTitle
+        ><AlertDialogTitle>{{ item.title }}</AlertDialogTitle
         ><AlertDialogDescription>
-          <span>{{ confirmation?.message }}</span>
-          <span v-if="confirmation?.warning" class="mt-2 block text-destructive">{{
-            confirmation.warning
-          }}</span>
+          <span>{{ item.message }}</span>
+          <span v-if="item.warning" class="mt-2 block text-destructive">{{ item.warning }}</span>
         </AlertDialogDescription></AlertDialogHeader
       >
       <AlertDialogFooter
-        ><AlertDialogCancel @click="finishConfirmation(false)">取消</AlertDialogCancel
-        ><AppButton tone="primary" @click="finishConfirmation(true)"
+        ><AlertDialogCancel @click="finishConfirmation(false, item)">取消</AlertDialogCancel
+        ><AppButton tone="primary" @click="finishConfirmation(true, item)"
           >确认</AppButton
         ></AlertDialogFooter
       >

@@ -195,7 +195,7 @@ async function signOut() {
   try {
     await authStore.signOut()
   } finally {
-    await router.replace({ name: 'login' })
+    if (!authStore.token) await router.replace({ name: 'login' })
   }
 }
 watch(

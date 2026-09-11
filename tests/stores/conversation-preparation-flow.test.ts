@@ -1,3 +1,4 @@
+import { setAccessToken, sessionCredentials } from '../support/auth'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -6,7 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useConversationStore } from '@/stores/conversation'
 import { useNavigationStore } from '@/stores/navigation'
 import { useProjectStore } from '@/stores/project'
-import { setAccessToken, removeAccessToken } from '@/utils/auth'
+import { removeAccessToken } from '@/utils/auth'
 import * as conversationApi from '@/api/conversation'
 import { getSocketTicket } from '@/api/auth'
 import type {

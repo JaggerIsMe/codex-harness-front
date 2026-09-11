@@ -1,3 +1,4 @@
+import { sessionCredentials } from '../support/auth'
 import { test, expect, type Page, type Route } from '@playwright/test'
 import type { WebSocketRoute } from '@playwright/test'
 
@@ -1278,14 +1279,17 @@ async function fixtures(page: Page, authenticated = true) {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   if (authenticated)
-    await page.addInitScript(() => localStorage.setItem('harness_access_token', 'test-token'))
+    await page.addInitScript(
+      (value) => localStorage.setItem('harness_auth_session', JSON.stringify(value)),
+      sessionCredentials('test-token'),
+    )
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1', '')
     let data: unknown = []
     if (path === '/auth/profile') data = profile
     else if (path === '/auth/socket-ticket')
       data = { ticket: 'one-time-test-ticket', expiresInSeconds: 30 }
-    else if (path === '/auth/login') data = { accessToken: 'test-token', user: profile }
+    else if (path === '/auth/login') data = { ...sessionCredentials('test-token'), user: profile }
     else if (path === '/devices/available') data = [{ ...device, provisioningAvailable: true }]
     else if (path === '/devices') data = [device]
     else if (path === '/devices/1/workspaces')

@@ -1,8 +1,12 @@
+import { sessionCredentials } from '../support/auth'
 import { expect, test, type Page } from '@playwright/test'
 
 const envelope = (data: unknown) => ({ status: 'success', code: 200, info: '成功', data })
 async function withExistingLogin(page: Page, token = 'another-account') {
-  await page.addInitScript((value) => localStorage.setItem('harness_access_token', value), token)
+  await page.addInitScript(
+    (value) => localStorage.setItem('harness_auth_session', JSON.stringify(value)),
+    sessionCredentials(token),
+  )
 }
 
 test('activation is public, removes the URL token, and keeps the current identity until explicit switching', async ({
@@ -44,12 +48,18 @@ test('activation is public, removes the URL token, and keeps the current identit
     displayName: '新成员',
   })
   expect(requests).not.toContain('/api/v1/auth/profile')
-  expect(await page.evaluate(() => localStorage.getItem('harness_access_token'))).toBe(
-    'another-account',
-  )
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('harness_auth_session') || 'null')?.accessToken ?? null,
+    ),
+  ).toBe('another-account')
   await page.getByRole('button', { name: '切换账号登录' }).click()
   await expect(page).toHaveURL(/\/login$/)
-  expect(await page.evaluate(() => localStorage.getItem('harness_access_token'))).toBeNull()
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('harness_auth_session') || 'null')?.accessToken ?? null,
+    ),
+  ).toBeNull()
 })
 
 for (const [code, label] of [
@@ -77,9 +87,12 @@ for (const [code, label] of [
     await expect(page.getByRole('status')).toContainText('若邮箱符合条件')
     await expect(page.getByRole('button', { name: /秒后可重发/ })).toBeDisabled()
     expect(resend).toEqual({ email: 'member@example.com' })
-    expect(await page.evaluate(() => localStorage.getItem('harness_access_token'))).toBe(
-      'expired-login',
-    )
+    expect(
+      await page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem('harness_auth_session') || 'null')?.accessToken ?? null,
+      ),
+    ).toBe('expired-login')
   })
 }
 
@@ -119,7 +132,9 @@ test('password recovery keeps leading zeros, shows invalid codes locally, and pr
   expect(submissions).toEqual(
     Array(2).fill({ email: 'member@example.com', code: '001234', newPassword: 'NewPassword123' }),
   )
-  expect(await page.evaluate(() => localStorage.getItem('harness_access_token'))).toBe(
-    'another-account',
-  )
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('harness_auth_session') || 'null')?.accessToken ?? null,
+    ),
+  ).toBe('another-account')
 })

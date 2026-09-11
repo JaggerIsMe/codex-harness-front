@@ -1,3 +1,4 @@
+import { sessionCredentials } from '../support/auth'
 import { expect, test, type Page } from '@playwright/test'
 import type { WorkspaceFileEntry, WorkspaceFileOperation } from '../../src/types/workspace-file'
 
@@ -30,7 +31,10 @@ async function fixture(page: Page) {
     status: 'ACTIVE',
     codexThreadId: 'thread-4',
   }
-  await page.addInitScript(() => localStorage.setItem('harness_access_token', 'test-token'))
+  await page.addInitScript(
+    (value) => localStorage.setItem('harness_auth_session', JSON.stringify(value)),
+    sessionCredentials('test-token'),
+  )
   await page.routeWebSocket('**/ws/client?*', () => {})
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1', '')

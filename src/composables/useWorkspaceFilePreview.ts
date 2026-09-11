@@ -181,7 +181,7 @@ export function useWorkspaceFilePreview(
     },
     { flush: 'sync' },
   )
-  watch([projectId, conversationId, () => auth.token], clear, { flush: 'sync' })
+  watch([projectId, conversationId, () => auth.sessionId], clear, { flush: 'sync' })
   watch(
     () => directories.resetEpochs[String(projectId.value)],
     () => {

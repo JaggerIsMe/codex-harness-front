@@ -1,3 +1,4 @@
+import { sessionCredentials } from '../support/auth'
 import { expect, test, type Page } from '@playwright/test'
 
 async function fixture(page: Page, permissions: string[]) {
@@ -30,7 +31,10 @@ async function fixture(page: Page, permissions: string[]) {
   }
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.addInitScript(() => localStorage.setItem('harness_access_token', 'test-token'))
+  await page.addInitScript(
+    (value) => localStorage.setItem('harness_auth_session', JSON.stringify(value)),
+    sessionCredentials('test-token'),
+  )
   await page.routeWebSocket('**/ws/client?*', () => {})
   const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
   await page.route('**/api/v1/**', async (route) => {

@@ -78,10 +78,18 @@ export interface ExecutableDevice {
   isolationMode: string
   provisioningAvailable: boolean
 }
-export interface LoginResult {
+export interface SessionCredentials {
   accessToken: string
   tokenType: string
   expiresInSeconds: number
+  expiresAt: number
+  sessionId: string
+  sessionExpiresAt: number
+  idleExpiresAt: number
+  refreshBeforeSeconds: number
+  credentialGeneration: number
+}
+export interface LoginResult extends SessionCredentials {
   user: User
 }
 export interface Enrollment {

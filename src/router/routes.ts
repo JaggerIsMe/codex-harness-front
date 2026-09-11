@@ -119,6 +119,7 @@ router.beforeEach(async (to) => {
   if (to.meta.publicFlow) return true
   const hasToken = Boolean(getAccessToken())
   const auth = useAuthStore()
+  auth.synchronize()
   if (to.matched.some((record) => record.meta.requiresAuth) && !hasToken) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
@@ -126,6 +127,7 @@ router.beforeEach(async (to) => {
     try {
       if (!auth.user) await auth.loadProfile()
     } catch {
+      if (getAccessToken()) return true
       return to.name === 'login' ? true : { name: 'login' }
     }
     if (auth.user?.mustChangePassword && to.name !== 'password') return { name: 'password' }

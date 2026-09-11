@@ -72,7 +72,7 @@ export function useWorkspaceFileActions(pid: Id, files: ReturnType<typeof useWor
     if (!value) clearSelection()
   })
   watch(
-    () => auth.token,
+    () => auth.sessionId,
     () => {
       clearSelection()
       operations.value = []

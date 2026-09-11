@@ -27,8 +27,8 @@ import { useAuthStore } from '@/stores/auth'
 defineProps<{ title: string; description?: string }>()
 const auth = useAuthStore()
 const router = useRouter()
-function goToLogin() {
-  auth.clear()
-  void router.replace('/login')
+async function goToLogin() {
+  if (auth.isAuthenticated) await auth.clear()
+  await router.replace('/login')
 }
 </script>

@@ -38,7 +38,7 @@ export const useWorkspaceFileStore = defineStore('workspace-file', () => {
   const changes = new Set<string>()
   const auth = useAuthStore()
   watch(
-    () => auth.token,
+    () => auth.sessionId,
     () => {
       projects.value = {}
       expanded.value = {}

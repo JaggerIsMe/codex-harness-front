@@ -3,6 +3,7 @@ import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import * as api from '@/api/conversation'
 import { useConversationStore } from '@/stores/conversation'
 import { useAgentStore } from '@/stores/agent'
+import { CanceledError } from 'axios'
 import type { ApiResponse, Conversation, Message, RealtimeEvent } from '@/types/domain'
 
 const navigation = vi.hoisted(() => ({
@@ -40,8 +41,12 @@ function result<T>(data: T): ApiResponse<T> {
 }
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => (resolve = done))
-  return { promise, resolve }
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
 }
 const message: Message = {
   id: 10,
@@ -128,6 +133,66 @@ it('retains renamed Conversation and Project names after older detail and list s
   })
   expect(store.conversations.find((value) => value.id === 5)?.projectName).toBe('Renamed Project')
 })
+
+it.each(['send', 'interrupt', 'approval'] as const)(
+  'preserves the new session %s operation when an old request finishes',
+  async (kind) => {
+    const old = deferred<never>()
+    const current = deferred<never>()
+    const operation =
+      kind === 'send'
+        ? api.startTurn
+        : kind === 'interrupt'
+          ? api.interruptTurn
+          : api.resolveApproval
+    vi.mocked(operation).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
+    const store = useConversationStore()
+    const prepare = () => {
+      store.currentProjectId = 3
+      store.currentConversation = conversation()
+      store.currentTurn = kind === 'send' ? null : { id: 7, status: 'RUNNING' }
+    }
+    const start = () => {
+      const request =
+        kind === 'send'
+          ? store.startNewTurn({ message: 'Hello' })
+          : kind === 'interrupt'
+            ? store.interruptCurrentTurn()
+            : store.decideApproval(
+                {
+                  id: 9,
+                  conversationId: 4,
+                  turnId: 7,
+                  approvalType: 'COMMAND',
+                  details: {},
+                  status: 'PENDING',
+                },
+                'APPROVE',
+              )
+      return request.catch(() => undefined)
+    }
+    const busy = () =>
+      kind === 'send'
+        ? store.sending
+        : kind === 'interrupt'
+          ? store.interrupting
+          : store.resolvingId !== null
+    prepare()
+    const previousRequest = start()
+    expect(busy()).toBe(true)
+    store.reset()
+    prepare()
+    const currentRequest = start()
+    expect(busy()).toBe(true)
+    old.reject(new CanceledError('Old login ended'))
+    await previousRequest
+    expect(busy()).toBe(true)
+    expect(navigation.markIssue).not.toHaveBeenCalled()
+    current.reject(new CanceledError('Current request canceled'))
+    await currentRequest
+    expect(busy()).toBe(false)
+  },
+)
 
 it('clears the deleted current Conversation and prevents pending deltas or detail requests restoring it', async () => {
   const store = useConversationStore()

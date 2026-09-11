@@ -21,6 +21,9 @@
         <p class="login-card__eyebrow">WELCOME BACK</p>
         <h2>登录管理中台</h2>
         <p class="login-card__hint">使用已激活的邮箱账号继续</p>
+        <p v-if="sessionNotice" class="mb-4 rounded-md bg-muted p-3 text-sm" role="status">
+          {{ sessionNotice }}
+        </p>
 
         <AppForm ref="formRef" :model="form" :rules="rules" @keyup.enter="submitLogin">
           <FormField label="邮箱" prop="email">
@@ -77,15 +80,17 @@ import AppForm from '@/components/common/AppForm.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import type { FormRules, FormHandle } from '@/components/common/form'
-import { onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight as Right } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '../../stores/auth'
 import type { Credentials } from '@/types/domain'
+import { sessionEndMessage } from '@/utils/authSession'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const sessionNotice = computed(() => sessionEndMessage(route.query.reason))
 const formRef = ref<FormHandle | null>(null)
 const submitting = ref(false)
 const controller = new AbortController()

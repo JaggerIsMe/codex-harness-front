@@ -1,3 +1,4 @@
+import { sessionCredentials } from '../support/auth'
 import { test, expect, type Page } from '@playwright/test'
 
 const member = {
@@ -31,7 +32,10 @@ const machines = [1, 2].map((id) => ({
 }))
 async function setup(page: Page, profile = member) {
   const requests: string[] = []
-  await page.addInitScript(() => localStorage.setItem('harness_access_token', 'test-token'))
+  await page.addInitScript(
+    (value) => localStorage.setItem('harness_auth_session', JSON.stringify(value)),
+    sessionCredentials('test-token'),
+  )
   await page.routeWebSocket('**/ws/client?*', () => {})
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1', '')

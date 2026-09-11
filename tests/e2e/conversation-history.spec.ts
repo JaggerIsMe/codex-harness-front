@@ -1,3 +1,4 @@
+import { sessionCredentials } from '../support/auth'
 import {
   expect,
   test,
@@ -72,7 +73,10 @@ async function fixture(page: Page) {
     updates: [],
   })
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.addInitScript(() => localStorage.setItem('harness_access_token', 'test-token'))
+  await page.addInitScript(
+    (value) => localStorage.setItem('harness_auth_session', JSON.stringify(value)),
+    sessionCredentials('test-token'),
+  )
   await page.routeWebSocket('**/ws/client?*', (connected) => {
     socket = connected
   })

@@ -1,23 +1,69 @@
 import { request } from './request'
+import type { AuthSession } from '@/utils/auth'
 import type {
   User,
   LoginResult,
   Credentials,
   ActivationDetails,
   EmailSendResult,
+  SessionCredentials,
 } from '@/types/domain'
-export const logout = () => request<void>('post', '/auth/logout')
-export const changePassword = (currentPassword: string, newPassword: string) =>
-  request<void>('post', '/auth/change-password', { currentPassword, newPassword })
+export const logout = (expectedSession?: AuthSession) =>
+  request<void>(
+    'post',
+    '/auth/logout',
+    {},
+    { expectedSession, withCredentials: true, skipRenewal: true, sessionControl: true },
+  )
+export const refreshSession = (sessionId: string) =>
+  request<SessionCredentials>(
+    'post',
+    '/auth/refresh',
+    {},
+    {
+      anonymous: true,
+      localErrors: true,
+      skipRenewal: true,
+      withCredentials: true,
+      headers: { 'X-Harness-Session': sessionId, 'X-Harness-Refresh': '1' },
+    },
+  )
+export const recordSessionActivity = (expectedSession: AuthSession) =>
+  request<{ idleExpiresAt: number; sessionExpiresAt: number }>(
+    'post',
+    '/auth/activity',
+    {},
+    {
+      expectedSession,
+      localErrors: true,
+      headers: { 'X-Harness-Activity': '1' },
+    },
+  )
+export const changePassword = (
+  currentPassword: string,
+  newPassword: string,
+  expectedSession?: AuthSession,
+) =>
+  request<void>(
+    'post',
+    '/auth/change-password',
+    { currentPassword, newPassword },
+    { expectedSession },
+  )
 export const getSocketTicket = (signal?: AbortSignal) =>
   request<{ ticket: string; expiresInSeconds: number }>('post', '/auth/socket-ticket', undefined, {
     signal,
   })
 export function login(data: Credentials, signal?: AbortSignal) {
-  return request<LoginResult>('post', `/auth/login`, data, { anonymous: true, signal })
+  return request<LoginResult>('post', `/auth/login`, data, {
+    anonymous: true,
+    signal,
+    withCredentials: true,
+    headers: { 'X-Harness-Refresh': '1' },
+  })
 }
-export function getProfile() {
-  return request<User>('get', `/auth/profile`)
+export function getProfile(expectedSession?: AuthSession) {
+  return request<User>('get', `/auth/profile`, undefined, { expectedSession })
 }
 const publicOptions = (signal?: AbortSignal) => ({ anonymous: true, localErrors: true, signal })
 export const validateActivation = (token: string, signal?: AbortSignal) =>

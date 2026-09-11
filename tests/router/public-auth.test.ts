@@ -1,3 +1,5 @@
+import { setAccessToken } from '../support/auth'
+import { getAccessToken } from '@/utils/auth'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, expect, it, vi } from 'vitest'
 import router from '@/router/index.js'
@@ -18,7 +20,7 @@ it.each(['anonymous', 'expired', 'force-password'] as const)(
       .mockRejectedValue(new Error('Expired credentials'))
     const auth = useAuthStore()
     if (state !== 'anonymous') {
-      localStorage.setItem('harness_access_token', 'existing-credentials')
+      setAccessToken('existing-credentials')
       auth.token = 'existing-credentials'
     }
     if (state === 'force-password')
@@ -36,7 +38,6 @@ it.each(['anonymous', 'expired', 'force-password'] as const)(
     await router.push('/activate')
     expect(router.currentRoute.value.name).toBe('activate')
     expect(profile).not.toHaveBeenCalled()
-    if (state !== 'anonymous')
-      expect(localStorage.getItem('harness_access_token')).toBe('existing-credentials')
+    if (state !== 'anonymous') expect(getAccessToken()).toBe('existing-credentials')
   },
 )
