@@ -200,7 +200,7 @@
           <div class="empty-intro">
             <span class="empty-intro__label">{{ projectName || '工作区' }}</span>
             <h2>今天想做些什么？</h2>
-            <p>新建一个会话，开始与 Codex 一起工作。</p>
+            <p>新建一个会话，开始与 Agent 一起工作。</p>
             <div class="flex flex-wrap items-center justify-center gap-2">
               <AppButton :icon="Plus" tone="primary" @click="emit('create')">新建会话</AppButton>
               <ProjectActions v-if="project" :key="project.id" :project="project" />
@@ -437,7 +437,7 @@ const { rows: turnExperts, error: expertIdentityError } = useTurnExperts(
 )
 const expertName = (id: number) => {
   const value = turnExperts.value.find((row) => String(row.turnId) === String(id))
-  return value ? value.expertName || 'Codex' : '助手'
+  return value ? value.expertName || 'Agent' : '助手'
 }
 
 const conversationStatus = computed(() => {
@@ -476,7 +476,7 @@ function turnStatusLabel(status: string) {
             : currentTurn.value?.preparationPhase
               ? '正在准备附件'
               : '任务正在下发',
-        RUNNING: 'Codex 正在执行',
+        RUNNING: 'Agent 正在执行',
         WAITING_APPROVAL: '等待审批',
       } as Record<string, string>
     )[status] || status

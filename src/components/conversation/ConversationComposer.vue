@@ -60,7 +60,7 @@
         :rows="2"
         maxlength="100000"
         resize="none"
-        placeholder="向 Codex 描述任务，Ctrl + Enter 发送"
+        placeholder="向 Agent 描述任务，Ctrl + Enter 发送"
         :disabled="!canStartTurn || sending"
         @keydown.ctrl.enter.prevent="send"
         @keydown.esc="expanded = false"

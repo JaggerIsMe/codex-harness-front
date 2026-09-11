@@ -7,13 +7,13 @@
   >
     <div class="space-y-4">
       <p class="text-sm text-muted-foreground">
-        新 Turn 使用所选运行目标；已有 Conversation 会重启其独立 App Server，并严格恢复原 Codex
+        新 Turn 使用所选运行目标；已有 Conversation 会重启其独立 App Server，并严格恢复原 会话
         thread。恢复失败时 Turn 会失败，不会静默回退。
       </p>
       <label class="block space-y-2"
         >模型运行目标<AppSelect v-model="selected"
           ><option value="" disabled>请选择运行目标</option>
-          <option value="LOCAL_CODEX">本地 Codex（使用机器本地配置和认证）</option>
+          <option value="LOCAL_CODEX">本地Agent模型（使用机器本地配置和认证）</option>
           <option
             v-for="v in versions"
             :key="v.versionId"
@@ -29,7 +29,7 @@
         该 Agent 版本尚未声明显式模型运行目标能力，请先升级并重新连接。
       </p>
       <p v-else-if="device && !device.managedModels" class="text-sm text-muted-foreground">
-        该 Agent 只能选择本地 Codex；升级后才能使用第三方模型。
+        该 Agent 只能选择本地Agent模型；升级后才能使用第三方模型。
       </p>
       <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
     </div>
@@ -122,7 +122,7 @@ async function remove() {
   if (!props.device || !assignment.value) return
   if (
     !(await confirmAction(
-      '解除后该 Device 保持“未配置”状态，新 Conversation 和新 Turn 都会被阻止；不会自动使用本地 Codex。',
+      '解除后该 Device 保持“未配置”状态，新 Conversation 和新 Turn 都会被阻止；不会自动使用本地Agent模型。',
       '解除模型运行目标',
     ))
   )

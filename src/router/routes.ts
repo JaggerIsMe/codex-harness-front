@@ -115,7 +115,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  document.title = `${to.meta.title || '中台'} · My Harness For Codex`
+  document.title = `${to.meta.title || '中台'} · Vantrue Harness`
   if (to.meta.publicFlow) return true
   const hasToken = Boolean(getAccessToken())
   const auth = useAuthStore()
@@ -135,7 +135,7 @@ router.beforeEach(async (to) => {
     if (typeof to.meta.permission === 'string' && !auth.can(to.meta.permission))
       return auth.can('workspace:use') ? '/projects' : '/account/password'
   }
-  document.title = `${to.meta.title || '中台'} · My Harness For Codex`
+  document.title = `${to.meta.title || '中台'} · Vantrue Harness`
   return true
 })
 

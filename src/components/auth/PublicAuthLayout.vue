@@ -4,7 +4,7 @@
       class="grid w-full max-w-md gap-6 rounded-xl border bg-background p-6 shadow-sm sm:p-8"
     >
       <div class="grid gap-2">
-        <p class="text-sm font-semibold text-primary">My Harness For Codex</p>
+        <p class="text-sm font-semibold text-primary">Vantrue Harness</p>
         <h1 class="text-2xl font-semibold">{{ title }}</h1>
         <p v-if="description" class="text-sm text-muted-foreground">{{ description }}</p>
       </div>

@@ -99,7 +99,7 @@ it('shows preparation, execution and approval changes in the same Conversation s
     ['CREATED', null, '任务正在下发'],
     ['CREATED', 'EXPERT_SKILLS', '正在准备专家 Skills'],
     ['CREATED', 'ATTACHMENTS', '正在准备附件'],
-    ['RUNNING', null, 'Codex 正在执行'],
+    ['RUNNING', null, 'Agent 正在执行'],
     ['WAITING_APPROVAL', null, '等待审批'],
   ] as const) {
     store.currentTurn = { id: 7, conversationId: 4, status, preparationPhase }
@@ -117,7 +117,7 @@ it.each(['COMPLETED', 'FAILED', 'INTERRUPTED'])(
     store.currentConversation = { ...conversation }
     store.currentTurn = { id: 7, status: 'RUNNING' }
     const view = mountWorkspace()
-    expect(view.get('.conversation-title [role="status"]').text()).toBe('Codex 正在执行')
+    expect(view.get('.conversation-title [role="status"]').text()).toBe('Agent 正在执行')
 
     store.currentTurn = { id: 7, status }
     await nextTick()
@@ -131,7 +131,7 @@ it('shows a Turn startup failure beside the title and displays its reason', () =
   const store = useConversationStore()
   store.currentConversation = { ...conversation }
   store.currentTurn = { id: 18, status: 'FAILED', preparationPhase: 'EXPERT_SKILLS' }
-  store.turnError = 'Codex method failed: thread/resume: thread already has an active writer'
+  store.turnError = 'Agent method failed: thread/resume: thread already has an active writer'
   const view = mountWorkspace()
   expect(view.get('.conversation-title [role="status"]').text()).toBe('回复失败')
   expect(view.get('[role="alert"]').text()).toContain('already has an active writer')

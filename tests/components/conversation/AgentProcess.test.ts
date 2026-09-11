@@ -22,7 +22,7 @@ it('preserves the nested provider error instead of reducing it to type and empty
 })
 
 it.each([
-  'Codex turn error',
+  'Agent turn error',
   '{malformed error',
   '<script>alert("error")</script>',
   '{"message":"Request failed","status":503,"details":{"retryAfter":10}}',

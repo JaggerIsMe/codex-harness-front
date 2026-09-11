@@ -28,7 +28,7 @@
       <div class="sidebar-brand">
         <RouterLink :to="authStore.home" class="brand-link" aria-label="Harness 首页"
           ><Command class="size-6 shrink-0" /><span v-if="!collapsed || mobileOpen"
-            >Harness</span
+            >Vantrue Harness</span
           ></RouterLink
         >
         <button

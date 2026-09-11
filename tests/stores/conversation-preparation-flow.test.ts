@@ -268,7 +268,7 @@ it('shows a START_TURN failure during Expert Skill preparation and preserves it 
   const { store, socket } = await openAndSend()
   const failureState = store as ConversationFailureState
   const message =
-    'Codex method failed: thread/resume: thread test-thread already has an active writer'
+    'Agent method failed: thread/resume: thread test-thread already has an active writer'
   const failure = {
     type: 'ERROR',
     deviceId: 1,

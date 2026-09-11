@@ -101,7 +101,7 @@ function render() {
 
 it.each<Activity>([
   { state: 'idle', label: '未开始' },
-  { state: 'running', label: 'Codex 正在执行' },
+  { state: 'running', label: 'Agent 正在执行' },
   { state: 'completed', label: 'Turn 已完成' },
   { state: 'error', label: 'Turn 失败' },
 ])(
@@ -144,7 +144,7 @@ it('updates activity in place without replacing the Conversation link or title',
     { state: 'completed', label: 'Turn 已完成' },
     { state: 'error', label: 'Device 离线' },
     { state: 'idle', label: '未开始' },
-    { state: 'running', label: 'Codex 正在执行' },
+    { state: 'running', label: 'Agent 正在执行' },
   ] satisfies Activity[]) {
     activities[4] = activity
     await nextTick()

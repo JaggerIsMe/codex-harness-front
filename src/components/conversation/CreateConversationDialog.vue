@@ -1,5 +1,5 @@
 <template>
-  <AppDialog :model-value="modelValue" title="创建 Codex 会话" width="540px" @close="close">
+  <AppDialog :model-value="modelValue" title="创建会话" width="540px" @close="close">
     <AppForm ref="formRef" :model="form" :rules="rules">
       <AppAlert
         type="info"

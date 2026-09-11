@@ -2,11 +2,11 @@
   <main class="login-page">
     <section class="login-intro">
       <div class="login-intro__content">
-        <div class="login-logo"><span>H</span> My Harness For Codex</div>
-        <p class="login-intro__eyebrow">REMOTE CODEX OPERATIONS</p>
-        <h1>把每一台开发设备，<br />连接成一个可控的执行网络。</h1>
+        <div class="login-logo"><span>VH</span> Vantrue Harness</div>
+        <p class="login-intro__eyebrow">REMOTE AGENT OPERATIONS</p>
+        <h1>把每一台开发设备<br />连接成一个可控的AGENT<br />执行网络。</h1>
         <p class="login-intro__description">
-          从一个中台发起 Codex 会话，实时查看执行过程，并在高风险操作发生前做出决定。
+          从一个平台发起 Agent 会话，实时查看执行过程，并在高风险操作发生前做出决定。
         </p>
         <div class="login-features">
           <div><strong>实时</strong><span>任务流与设备状态</span></div>
@@ -19,7 +19,7 @@
     <section class="login-panel">
       <div class="login-card">
         <p class="login-card__eyebrow">WELCOME BACK</p>
-        <h2>登录管理中台</h2>
+        <h2>登录Vantrue Harness</h2>
         <p class="login-card__hint">使用已激活的邮箱账号继续</p>
         <p v-if="sessionNotice" class="mb-4 rounded-md bg-muted p-3 text-sm" role="status">
           {{ sessionNotice }}
@@ -69,7 +69,7 @@
 
         <p class="login-card__security">凭证仅用于连接 Harness Server，不会发送到目标设备。</p>
       </div>
-      <p class="login-panel__footer">My Harness For Codex · V1.0</p>
+      <p class="login-panel__footer">Vantrue Harness · V1.0</p>
     </section>
   </main>
 </template>

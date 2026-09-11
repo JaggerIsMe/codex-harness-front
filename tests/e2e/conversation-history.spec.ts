@@ -83,6 +83,17 @@ async function fixture(page: Page) {
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname.replace('/api/v1', '')
+    if (path === '/auth/activity' && route.request().method() === 'POST') {
+      expect(route.request().headers()['x-harness-activity']).toBe('1')
+      const session = sessionCredentials('test-token')
+      await route.fulfill({
+        json: response({
+          idleExpiresAt: session.idleExpiresAt,
+          sessionExpiresAt: session.sessionExpiresAt,
+        }),
+      })
+      return
+    }
     if (!['GET', 'HEAD'].includes(route.request().method()) && path !== '/auth/socket-ticket') {
       unexpectedWrites.push(`${route.request().method()} ${path}`)
       await route.fulfill({ status: 405, json: response(null) })

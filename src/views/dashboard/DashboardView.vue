@@ -5,8 +5,8 @@
     <section class="welcome-card">
       <div>
         <span class="page-kicker">SYSTEM OVERVIEW</span>
-        <h2>欢迎回到 Harness 中台</h2>
-        <p>设备、隔离项目与 Codex 会话将在这里汇聚。每个项目独占执行目录。</p>
+        <h2>欢迎使用 Vantrue Harness</h2>
+        <p>设备、隔离项目与 Agent 会话将在这里汇聚。每个项目独占执行目录。</p>
       </div>
     </section>
 
@@ -96,7 +96,7 @@ const metrics = computed(() => [
 
 const steps = [
   { title: '生成设备注册码', description: '在设备管理中创建十分钟内有效的一次性注册码。' },
-  { title: '连接 Harness Agent', description: '目标电脑完成注册并上报允许 Codex 操作的执行目录。' },
+  { title: '连接 Harness Agent', description: '目标电脑完成注册并上报允许 Agent 操作的执行目录。' },
   { title: '创建隔离项目', description: '将项目独占绑定到执行目录，再在项目中发起多个会话。' },
 ]
 

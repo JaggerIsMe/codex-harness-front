@@ -206,9 +206,9 @@ test('conversation keeps its creation-time expert and turn requests cannot switc
   await expect(page.locator('.composer-shell')).toContainText('当前专家：Java 开发专家')
   await expect(page.locator('.composer-shell')).not.toContainText('创建时固定，不可更改')
   for (const message of ['分析项目', '继续分析']) {
-    await page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送').fill(message)
+    await page.getByPlaceholder('向 Agent 描述任务，Ctrl + Enter 发送').fill(message)
     await page.getByRole('button', { name: '发送任务', exact: true }).click()
-    await expect(page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')).toHaveValue('')
+    await expect(page.getByPlaceholder('向 Agent 描述任务，Ctrl + Enter 发送')).toHaveValue('')
   }
   expect(turns.every((turn) => !('expertId' in turn))).toBe(true)
   await page.reload()
@@ -276,8 +276,8 @@ test('minimal composer preserves expanded drafts and replaces send with stop', a
   const stop = composer.getByRole('button', { name: '停止生成' })
   await expect(stop).toBeVisible()
   await expect(stop).toHaveCSS('border-radius', '50%')
-  await expect(page.locator('.conversation-title [role="status"]')).toContainText('Codex 正在执行')
-  await expect(page.locator('.conversation-header__actions')).not.toContainText('Codex 正在执行')
+  await expect(page.locator('.conversation-title [role="status"]')).toContainText('Agent 正在执行')
+  await expect(page.locator('.conversation-header__actions')).not.toContainText('Agent 正在执行')
   await page.screenshot({ path: testInfo.outputPath('composer-running-light.png'), fullPage: true })
   await page.getByRole('button', { name: '切换到深色主题' }).click()
   await expect(page.locator('.composer')).toHaveCSS('background-color', 'rgb(23, 23, 23)')
@@ -1401,7 +1401,7 @@ test('login validates required fields and submits using Enter', async ({ page })
   await page.getByPlaceholder('请输入邮箱').fill('admin@example.com')
   await page.getByPlaceholder('请输入密码').fill('test-password')
   await page.getByPlaceholder('请输入密码').press('Enter')
-  await expect(page.getByRole('heading', { name: '欢迎回到 Harness 中台' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '欢迎使用 Vantrue Harness' })).toBeVisible()
   expect(errors).toEqual([])
 })
 
@@ -1544,7 +1544,7 @@ test('Conversation displays an active writer error and retains failure after leg
   const errors = await fixtures(page)
   const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
   const failure =
-    'Codex method failed: thread/resume: thread 01a0846c-f650-7291-ab2f-48c61a1bb4f4 already has an active writer'
+    'Agent method failed: thread/resume: thread 01a0846c-f650-7291-ab2f-48c61a1bb4f4 already has an active writer'
   let socket: WebSocketRoute | undefined
   let failed = false
   let activeTurnReads = 0
@@ -1762,7 +1762,8 @@ test.describe('sidebar Conversation activity', () => {
       page
         .getByRole('region', { name: '工作区项目与会话' })
         .getByRole('link', { name: title, exact: true })
-    const indicator = (title: string) => link(title).locator('.workspace-conversation__activity')
+    const indicator = (title: string) =>
+      link(title).locator('..').locator('.workspace-conversation__activity')
     return { errors, snapshots, sockets, link, indicator, snapshotRequests: () => snapshotRequests }
   }
 
@@ -1784,7 +1785,7 @@ test.describe('sidebar Conversation activity', () => {
       'rgb(220, 38, 38)',
     )
     await expect(state.link('失败会话')).toHaveAccessibleDescription('模型请求失败')
-    await expect(state.indicator('空会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('空会话')).toHaveCount(0)
     await expect(
       state.indicator('空会话').locator('svg, .workspace-conversation__dot'),
     ).toHaveCount(0)
@@ -1823,7 +1824,7 @@ test.describe('sidebar Conversation activity', () => {
     const background = state.snapshots.find((item) => item.id === 5)!
     await page.goto('/projects/3?id=4')
     await expect(page.getByRole('heading', { name: '测试会话', exact: true })).toBeVisible()
-    await expect(state.indicator('测试会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('测试会话')).toHaveCount(0)
     await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
     await expect.poll(() => state.sockets.length).toBe(1)
     const publish = (type: string, turnId: number, status: string) => {
@@ -1856,7 +1857,7 @@ test.describe('sidebar Conversation activity', () => {
     publish('TURN_FAILED', 22, 'FAILED')
     await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'error')
     await expect(state.link('后台会话')).toHaveAccessibleDescription('回复异常')
-    await expect(state.indicator('空会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('空会话')).toHaveCount(0)
     await page.reload()
     await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'error')
     expect(state.errors).toEqual([])
@@ -1903,7 +1904,7 @@ test.describe('sidebar Conversation activity', () => {
 
     await state.link('后台会话').click()
     await expect(page.locator('.agent-answer')).toContainText('后台会话的回复')
-    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('后台会话')).toHaveCount(0)
     await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCount(0)
     await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'error')
 
@@ -1911,13 +1912,13 @@ test.describe('sidebar Conversation activity', () => {
     const workbench = page.locator('.conversation-workbench')
     await expect(workbench.getByRole('alert').filter({ hasText: '模型请求失败' })).toBeVisible()
     await expect(workbench.locator('.conversation-title [role="status"]')).toHaveText('回复失败')
-    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('失败会话')).toHaveCount(0)
     await expect(state.indicator('失败会话').locator('.workspace-conversation__dot')).toHaveCount(0)
 
     await page.getByRole('link', { name: '设备管理', exact: true }).click()
     await page.reload()
-    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
-    await expect(state.indicator('失败会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('后台会话')).toHaveCount(0)
+    await expect(state.indicator('失败会话')).toHaveCount(0)
     await expect(state.indicator('不完整会话')).toHaveAttribute('data-state', 'error')
     expect(state.errors).toEqual([])
   })
@@ -1929,7 +1930,7 @@ test.describe('sidebar Conversation activity', () => {
     const background = state.snapshots.find((item) => item.id === 5)!
     await page.goto('/projects/3?id=5')
     await expect(page.locator('.agent-answer')).toContainText('后台会话的回复')
-    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('后台会话')).toHaveCount(0)
     await expect.poll(() => state.sockets.length).toBe(1)
     const publish = (type: string, turnId: number, status: string) => {
       background.latestTurnId = turnId
@@ -1958,7 +1959,7 @@ test.describe('sidebar Conversation activity', () => {
     await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'completed')
     await expect.poll(() => state.sockets.length).toBe(2)
     await state.link('后台会话').click()
-    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('后台会话')).toHaveCount(0)
 
     await page.getByRole('link', { name: '设备管理', exact: true }).click()
     publish('TURN_STARTED', 22, 'RUNNING')
@@ -1972,7 +1973,7 @@ test.describe('sidebar Conversation activity', () => {
         .getByRole('alert')
         .filter({ hasText: '后续执行失败' }),
     ).toBeVisible()
-    await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+    await expect(state.indicator('后台会话')).toHaveCount(0)
     expect(state.errors).toEqual([])
   })
 
@@ -2017,7 +2018,7 @@ test.describe('sidebar Conversation activity', () => {
       )
       await setForeground(true)
       await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true)
-      await expect(state.indicator('后台会话')).toHaveAttribute('data-state', 'idle')
+      await expect(state.indicator('后台会话')).toHaveCount(0)
       await expect(state.indicator('后台会话').locator('.workspace-conversation__dot')).toHaveCount(
         0,
       )
@@ -2321,7 +2322,7 @@ test('workspace preview keeps the conversation mounted, isolates content and dow
   })
   const tree = page.getByRole('complementary', { name: '工作区文件' })
   const preview = page.getByRole('complementary', { name: '文件预览', exact: true })
-  const draft = page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')
+  const draft = page.getByPlaceholder('向 Agent 描述任务，Ctrl + Enter 发送')
   await draft.fill('保留这条草稿')
   await draft.evaluate((element) => element.setAttribute('data-original-composer', 'true'))
   await tree.getByRole('button', { name: '预览 note.txt', exact: true }).click()
@@ -2722,7 +2723,7 @@ test.describe('workspace sidebar pagination', () => {
     await expect(state.sidebar.locator('.workspace-project')).toHaveCount(20)
     await expect(current.locator('a.workspace-conversation')).toHaveCount(10)
     await expect(page.locator('.agent-answer')).toContainText('分页会话001的完整回复')
-    const draft = page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')
+    const draft = page.getByPlaceholder('向 Agent 描述任务，Ctrl + Enter 发送')
     await draft.fill('加载更多目录时保留这条草稿')
     await page.clock.fastForward(16000)
     expect(
@@ -2907,7 +2908,10 @@ test.describe('workspace sidebar pagination', () => {
     const current = state.projectNode('分页项目01')
     await current.getByRole('button', { name: '加载更多会话', exact: true }).click()
     await expect(current.locator('a.workspace-conversation')).toHaveCount(20)
-    const marker = state.link('分页会话011').locator('.workspace-conversation__activity')
+    const marker = state
+      .link('分页会话011')
+      .locator('..')
+      .locator('.workspace-conversation__activity')
     await expect(marker).toHaveAttribute('data-state', 'running')
     await page.getByRole('link', { name: '设备管理', exact: true }).click()
     const background = state.conversations[3]!.find((item) => item.id === 3011)!
@@ -2928,10 +2932,10 @@ test.describe('workspace sidebar pagination', () => {
     await expect(marker).toHaveAttribute('data-state', 'completed')
     await state.link('分页会话011').click()
     await expect(page.locator('.agent-answer')).toContainText('分页会话011的完整回复')
-    await expect(marker).toHaveAttribute('data-state', 'idle')
+    await expect(marker).toHaveCount(0)
     await page.reload()
     await expect(state.link('分页会话011')).toBeVisible()
-    await expect(marker).toHaveAttribute('data-state', 'idle')
+    await expect(marker).toHaveCount(0)
     expect(state.errors).toEqual([])
   })
 
@@ -2990,7 +2994,7 @@ test.describe('workspace sidebar pagination', () => {
     await expect(projectNames).toHaveCount(25)
     await expect(state.link('后页会话001')).toBeVisible()
     const loadedNames = await projectNames.allTextContents()
-    const draft = page.getByPlaceholder('向 Codex 描述任务，Ctrl + Enter 发送')
+    const draft = page.getByPlaceholder('向 Agent 描述任务，Ctrl + Enter 发送')
     await draft.fill('后台项目排序变化时仍保留我的草稿')
     await page.clock.fastForward(1000)
     const background = state.conversations[27]![0]!
@@ -3007,7 +3011,7 @@ test.describe('workspace sidebar pagination', () => {
     )
     await expect(projectNames.first()).toHaveText('后页项目25')
     await expect(
-      state.link('后页会话001').locator('.workspace-conversation__activity'),
+      state.link('后页会话001').locator('..').locator('.workspace-conversation__activity'),
     ).toHaveAttribute('data-state', 'running')
     await page.clock.fastForward(1000)
     for (const sequence of [1, 2]) {
@@ -3067,7 +3071,7 @@ test.describe('workspace sidebar pagination', () => {
     await expect(projectNames.first()).toHaveText('后页项目25')
     await expect(projectNames).toHaveCount(25)
     await expect(
-      state.link('后页会话001').locator('.workspace-conversation__activity'),
+      state.link('后页会话001').locator('..').locator('.workspace-conversation__activity'),
     ).toHaveAttribute('data-state', 'completed')
     expect(state.reads).toHaveLength(listCount)
     await page.reload()

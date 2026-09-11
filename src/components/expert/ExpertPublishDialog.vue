@@ -11,7 +11,7 @@
       <span>
         <strong class="block">兼容升级</strong>
         <span class="mt-1 block text-sm text-muted-foreground">
-          该版本与上一版本兼容。项目升级到此版本时，兼容链完整的既有会话会保留原 Codex
+          该版本与上一版本兼容。项目升级到此版本时，兼容链完整的既有会话会保留原 会话
           Thread，并从下一轮开始使用新提示词和 Skills。
         </span>
       </span>

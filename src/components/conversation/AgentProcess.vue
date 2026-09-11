@@ -17,10 +17,10 @@
       <span class="agent-process__summary-copy">
         <strong>{{
           streaming
-            ? 'Codex 正在处理'
+            ? 'Agent 正在处理'
             : incomplete
-              ? 'Codex 处理已结束，部分结果未完成'
-              : 'Codex 已完成处理'
+              ? 'Agent 处理已结束，部分结果未完成'
+              : 'Agent 已完成处理'
         }}</strong>
         <small v-if="latestSummary">{{ latestSummary }}</small>
       </span>
