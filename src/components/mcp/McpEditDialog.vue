@@ -6,6 +6,10 @@
     @close="close"
   >
     <form class="space-y-4" @submit.prevent="save">
+      <p v-if="configuration" class="text-sm text-destructive">
+        发布新版本后，旧 MCP
+        版本将自动撤销。请更新并发布依赖它的专家，再升级项目专家，以恢复会话使用。
+      </p>
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="block space-y-2">名称<AppInput v-model="form.name" maxlength="128" /></label>
         <label class="block space-y-2"

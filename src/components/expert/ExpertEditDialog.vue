@@ -126,6 +126,13 @@ watch(
           .filter((option) => selected.has(option.id))
           .map((option) => option.id)
         const selectedMcp = new Set(form.mcpBindings)
+        for (const option of mcpResult.data) {
+          if (option.previousVersionIds?.some((id) => selectedMcp.has(id))) {
+            for (const id of option.previousVersionIds) selectedMcp.delete(id)
+            selectedMcp.add(Number(option.versionId))
+          }
+        }
+        form.mcpBindings = [...selectedMcp]
         mcpOptions.value = mcpResult.data.map((option) => ({
           id: Number(option.versionId),
           label: `${option.name} · v${option.versionNo} · ${option.serverCode} · ${option.transportType === 'STDIO' ? 'STDIO' : 'HTTP'}`,

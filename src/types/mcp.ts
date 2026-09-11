@@ -49,6 +49,7 @@ export interface McpSelectableVersion {
   name: string
   transportType: McpTransportType
   configDigest: string
+  previousVersionIds: number[]
 }
 export interface McpConfigurationDraft extends Omit<McpRuntimeSpec, 'command' | 'url'> {
   serverCode: string

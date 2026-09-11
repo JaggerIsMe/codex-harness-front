@@ -9,6 +9,24 @@ export interface Expert {
   systemPrompt: string | null
   skillVersionIds: number[]
   mcpBindings: number[]
+  skillUpdates: ExpertSkillUpdate[]
+  mcpUpdates: ExpertMcpUpdate[]
+}
+export interface ExpertMcpUpdate {
+  configurationId: number
+  name: string
+  currentVersionId: number
+  currentVersionNo: number
+  availableVersionId: number
+  availableVersionNo: number
+}
+export interface ExpertSkillUpdate {
+  skillId: number
+  skillName: string
+  currentVersionId: number
+  currentVersion: string
+  availableVersionId: number
+  availableVersion: string
 }
 export interface ExpertDraft {
   name: string

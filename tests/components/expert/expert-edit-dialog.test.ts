@@ -13,7 +13,7 @@ vi.mock('@/api/mcp', () => ({ listSelectableMcpVersions: vi.fn() }))
 let wrapper: VueWrapper
 afterEach(() => wrapper?.unmount())
 
-it('offers only the latest active Skill Version and upgrades an existing draft selection', async () => {
+it('upgrades existing Skill and MCP bindings to their latest active versions', async () => {
   vi.mocked(getSkills).mockResolvedValue({
     status: 'success',
     code: 200,
@@ -41,7 +41,7 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
             id: 50,
             skillId: 7,
             version: '1.0.0',
-            status: 'ACTIVE',
+            status: 'DISABLED',
             sha256: '',
             fileSize: 1,
             createdAt: '',
@@ -63,12 +63,13 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
     data: [
       {
         configurationId: 7,
-        versionId: 70,
+        versionId: 71,
         versionNo: 2,
         serverCode: 'github',
         name: 'GitHub MCP',
         transportType: 'STDIO',
         configDigest: 'a'.repeat(64),
+        previousVersionIds: [70],
       },
     ],
   })
@@ -82,6 +83,8 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
     systemPrompt: 'Review Java',
     skillVersionIds: [50],
     mcpBindings: [70],
+    skillUpdates: [],
+    mcpUpdates: [],
   }
   wrapper = mount(ExpertEditDialog, {
     props: { modelValue: false, expert },
@@ -94,6 +97,7 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
   expect(wrapper.text()).toContain('code-review · 2.0.0')
   expect(wrapper.text()).not.toContain('code-review · 1.0.0')
   expect(wrapper.text()).toContain('GitHub MCP · v2 · github · STDIO')
+  expect(wrapper.text()).not.toContain('不可用 MCP 配置版本 #70')
   const checkboxes = wrapper.findAll('input[type="checkbox"]')
   expect((checkboxes[0].element as HTMLInputElement).checked).toBe(true)
   expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true)
@@ -104,6 +108,50 @@ it('offers only the latest active Skill Version and upgrades an existing draft s
   await flushPromises()
   expect(saveExpert).toHaveBeenCalledWith(
     10,
-    expect.objectContaining({ skillVersionIds: [51], mcpBindings: [70], revision: 3 }),
+    expect.objectContaining({ skillVersionIds: [51], mcpBindings: [71], revision: 3 }),
   )
+})
+
+it('retains unavailable MCP bindings for explicit removal when there is no replacement', async () => {
+  vi.mocked(getSkills).mockResolvedValue({ status: 'success', code: 200, info: '', data: [] })
+  vi.mocked(listSelectableMcpVersions).mockResolvedValue({
+    status: 'success',
+    code: 200,
+    info: '',
+    data: [
+      {
+        configurationId: 8,
+        versionId: 80,
+        versionNo: 1,
+        serverCode: 'other',
+        name: 'Other MCP',
+        transportType: 'STDIO',
+        configDigest: '',
+        previousVersionIds: [],
+      },
+    ],
+  })
+  const expert: Expert = {
+    id: 10,
+    name: 'Java 专家',
+    description: '',
+    status: 'DRAFT',
+    publishedVersionId: null,
+    revision: 1,
+    systemPrompt: 'Review Java',
+    skillVersionIds: [],
+    mcpBindings: [70],
+    skillUpdates: [],
+    mcpUpdates: [],
+  }
+  wrapper = mount(ExpertEditDialog, {
+    props: { modelValue: false, expert },
+    global: { stubs: { AppDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
+  })
+  await wrapper.setProps({ modelValue: true })
+  await flushPromises()
+  expect(wrapper.text()).toContain('不可用 MCP 配置版本 #70（保存前需取消）')
+  const checkboxes = wrapper.findAll('input[type="checkbox"]')
+  expect((checkboxes[0].element as HTMLInputElement).checked).toBe(false)
+  expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true)
 })

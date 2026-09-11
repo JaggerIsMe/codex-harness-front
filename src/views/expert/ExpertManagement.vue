@@ -35,7 +35,44 @@
                 {{ row.description }}
               </p>
             </td>
-            <td class="whitespace-nowrap p-4">{{ labels[row.status] }}</td>
+            <td class="p-4">
+              <span class="whitespace-nowrap">{{ labels[row.status] }}</span>
+              <div v-if="row.skillUpdates?.length" class="mt-2 space-y-1 text-sm text-destructive">
+                <strong>Skill 已更新，需发布新专家版本</strong>
+                <p v-for="update in row.skillUpdates" :key="update.skillId">
+                  {{ update.skillName }}：{{ update.currentVersion }} →
+                  {{ update.availableVersion }}
+                </p>
+                <p
+                  v-if="
+                    row.skillUpdates.some(
+                      (update) => !row.skillVersionIds.includes(update.availableVersionId),
+                    )
+                  "
+                >
+                  请先编辑草稿并保存最新 Skill 版本，再发布。
+                </p>
+                <p v-else>草稿已更新，请发布新版本。</p>
+              </div>
+              <div v-if="row.mcpUpdates?.length" class="mt-2 space-y-1 text-sm text-destructive">
+                <strong>MCP 已更新，需发布新专家版本</strong>
+                <p v-for="update in row.mcpUpdates" :key="update.configurationId">
+                  {{ update.name }}：v{{ update.currentVersionNo }} → v{{
+                    update.availableVersionNo
+                  }}
+                </p>
+                <p
+                  v-if="
+                    row.mcpUpdates.some(
+                      (update) => !row.mcpBindings.includes(update.availableVersionId),
+                    )
+                  "
+                >
+                  请先编辑草稿并保存最新 MCP 版本，再发布。
+                </p>
+                <p v-else>草稿已更新，请发布新版本。</p>
+              </div>
+            </td>
             <td class="p-4">
               <div class="flex flex-wrap gap-2">
                 <AppButton size="small" :disabled="busy" @click="edit(row)">编辑草稿</AppButton
