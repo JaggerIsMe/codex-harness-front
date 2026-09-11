@@ -7,6 +7,10 @@
         <p>统一管理版本包，并将经过校验的 Skill 下发到在线执行机器。</p>
       </div>
       <div class="toolbar-actions">
+        <AppButton :disabled="loadingBatch" @click="openBatch('CREATE')">批量上传</AppButton>
+        <AppButton :disabled="loadingBatch" @click="openBatch('UPDATE')"
+          >批量更新{{ selectedSkillIds.length ? `（${selectedSkillIds.length}）` : '' }}</AppButton
+        >
         <AppButton :icon="Promotion" @click="openDeploy()">下发 Skill</AppButton
         ><AppButton tone="primary" :icon="Upload" @click="openUpload()">上传 Skill</AppButton>
       </div>
@@ -46,28 +50,45 @@
               ><AppButton @click="resetSkills">重置</AppButton>
             </div>
           </div>
-          <div class="table-area">
-            <Table
+          <div class="table-area skill-registry">
+            <Table class="skill-registry__table"
               ><TableHeader
                 ><TableRow
-                  ><TableHead style="min-width: 190px">Skill</TableHead
-                  ><TableHead style="min-width: 280px">描述</TableHead
-                  ><TableHead style="min-width: 90px">版本</TableHead
-                  ><TableHead style="min-width: 110px">状态</TableHead
-                  ><TableHead style="min-width: 180px">更新时间</TableHead
-                  ><TableHead style="min-width: 150px">操作</TableHead></TableRow
+                  ><TableHead style="width: 32px"
+                    ><input
+                      type="checkbox"
+                      aria-label="选择当前列表全部 Skill"
+                      :checked="
+                        skills.length > 0 &&
+                        skills.every((skill) => selectedSkillIds.includes(skill.id))
+                      "
+                      @change="selectAllSkills" /></TableHead
+                  ><TableHead style="width: 18%">Skill</TableHead><TableHead>描述</TableHead
+                  ><TableHead style="width: 7%">版本</TableHead
+                  ><TableHead style="width: 11%">状态</TableHead
+                  ><TableHead style="width: 20%">更新时间</TableHead
+                  ><TableHead style="width: 20%">操作</TableHead></TableRow
                 ></TableHeader
               ><TableBody
                 ><TableRow v-if="loadingSkills"
-                  ><TableCell :colspan="6" class="text-center">加载中…</TableCell></TableRow
+                  ><TableCell :colspan="7" class="text-center">加载中…</TableCell></TableRow
                 ><template v-for="row in skills" :key="row.id"
                   ><TableRow
+                    ><TableCell
+                      ><input
+                        v-model="selectedSkillIds"
+                        type="checkbox"
+                        :value="row.id"
+                        :aria-label="`选择 ${row.skillName}`" /></TableCell
                     ><TableCell
                       ><div class="primary-cell">
                         <strong>{{ row.skillName }}</strong
                         ><span>#{{ row.id }}</span>
                       </div></TableCell
-                    ><TableCell>{{ row.description }}</TableCell
+                    ><TableCell
+                      ><span class="skill-description" :title="row.description">{{
+                        row.description
+                      }}</span></TableCell
                     ><TableCell>{{ row.versionCount }}</TableCell
                     ><TableCell
                       ><AppBadge :tone="row.status === 'ENABLED' ? 'success' : 'info'">{{
@@ -81,7 +102,7 @@
                       ></TableCell
                     ></TableRow
                   ><TableRow
-                    ><TableCell :colspan="6"
+                    ><TableCell :colspan="7"
                       ><details>
                         <summary class="cursor-pointer text-primary">查看版本</summary>
                         <div class="version-panel">
@@ -91,15 +112,15 @@
                               >上传新版本</AppButton
                             >
                           </div>
-                          <Table
+                          <Table class="skill-versions__table"
                             ><TableHeader
                               ><TableRow
-                                ><TableHead style="min-width: 140px">版本号</TableHead
-                                ><TableHead style="min-width: 110px">大小</TableHead
-                                ><TableHead style="min-width: 210px">SHA-256</TableHead
-                                ><TableHead style="min-width: 100px">状态</TableHead
-                                ><TableHead style="min-width: 180px">上传时间</TableHead
-                                ><TableHead style="min-width: 245px">操作</TableHead></TableRow
+                                ><TableHead style="width: 15%">版本号</TableHead
+                                ><TableHead style="width: 12%">大小</TableHead
+                                ><TableHead style="width: 22%">SHA-256</TableHead
+                                ><TableHead style="width: 13%">状态</TableHead
+                                ><TableHead style="width: 20%">上传时间</TableHead
+                                ><TableHead style="width: 18%">操作</TableHead></TableRow
                               ></TableHeader
                             ><TableBody
                               ><template
@@ -154,7 +175,7 @@
                     ></TableRow
                   ></template
                 ><TableRow v-if="!skills.length && !loadingSkills"
-                  ><TableCell :colspan="6" class="text-center text-muted-foreground"
+                  ><TableCell :colspan="7" class="text-center text-muted-foreground"
                     >暂无 Skill，点击右上角上传</TableCell
                   ></TableRow
                 ></TableBody
@@ -269,6 +290,13 @@
       </TabsContent>
     </Tabs>
 
+    <BatchUploadSkillDialog
+      v-model="batchVisible"
+      :initial-mode="batchMode"
+      :skills="batchSkills"
+      :selected-skills="batchSelectedSkills"
+      @completed="handleBatchCompleted"
+    />
     <UploadSkillDialog v-model="uploadVisible" :skill="selectedSkill" @uploaded="handleUploaded" />
     <EditSkillDialog v-model="editVisible" :skill="selectedSkill" @saved="handleSaved" />
     <InstallSkillDialog
@@ -296,6 +324,8 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
+import BatchUploadSkillDialog from '@/components/skill/BatchUploadSkillDialog.vue'
+import type { SkillImportMode, SkillImportSubmission } from '@/types/skill-import'
 import { Send as Promotion, Search, Upload } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { confirmAction } from '@/lib/confirm'
@@ -322,6 +352,12 @@ const loadingDeployments = ref(false)
 const uploadVisible = ref(false)
 const editVisible = ref(false)
 const deployVisible = ref(false)
+const selectedSkillIds = ref<number[]>([])
+const batchVisible = ref(false)
+const batchMode = ref<SkillImportMode>('CREATE')
+const batchSkills = ref<Skill[]>([])
+const batchSelectedSkills = ref<Skill[]>([])
+const loadingBatch = ref(false)
 const selectedSkill = ref<Skill | null>(null)
 const initialVersionId = ref<number | null>(null)
 const removingId = ref<Id | null>(null)
@@ -329,6 +365,34 @@ const skillSearch = reactive({ keyword: '', status: '' })
 const deploymentSearch = reactive({ keyword: '', status: '', scopeType: '' })
 const deploymentStatuses = ['INSTALLING', 'INSTALLED', 'REMOVING', 'REMOVED', 'FAILED']
 
+function selectAllSkills(event: Event) {
+  selectedSkillIds.value = (event.target as HTMLInputElement).checked
+    ? skills.value.map((skill) => skill.id)
+    : []
+}
+async function openBatch(mode: SkillImportMode) {
+  loadingBatch.value = true
+  try {
+    const response = await getSkills({})
+    batchSkills.value = response.data
+    batchSelectedSkills.value = response.data.filter((skill) =>
+      selectedSkillIds.value.includes(skill.id),
+    )
+    batchMode.value = mode
+    batchVisible.value = true
+  } catch (cause) {
+    skillError.value = cause instanceof Error ? cause.message : 'Skill 加载失败'
+  } finally {
+    loadingBatch.value = false
+  }
+}
+function handleBatchCompleted(result: SkillImportSubmission) {
+  toast.success(
+    `批量处理完成：成功 ${result.successCount} 项，失败 ${result.failedCount} 项，跳过 ${result.skippedCount} 项`,
+  )
+  selectedSkillIds.value = []
+  void loadSkills()
+}
 async function loadSkills() {
   loadingSkills.value = true
   skillError.value = ''

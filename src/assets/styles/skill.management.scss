@@ -1,6 +1,57 @@
 .skill-page {
+  .skill-registry {
+    min-width: 0;
+
+    :deep([data-slot='table-container']) {
+      min-width: 0;
+      height: auto;
+    }
+
+    :deep(table) {
+      width: 100%;
+      table-layout: fixed;
+    }
+
+    :deep(th),
+    :deep(td) {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    :deep(button),
+    :deep([data-slot='badge']) {
+      max-width: 100%;
+      height: auto;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    :deep(button) {
+      min-height: 2rem;
+      padding-inline: 0.375rem;
+    }
+
+    .version-panel {
+      min-width: 0;
+      padding: 14px 0;
+    }
+
+    .version-panel__header {
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  }
+  .skill-description {
+    display: block;
+    width: 100%;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .toolbar-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
   }
   .skill-tabs {
@@ -49,5 +100,47 @@
   }
   .skill-page .version-panel {
     padding-left: 14px;
+  }
+}
+.skill-import {
+  display: grid;
+  gap: 1rem;
+
+  &__table {
+    width: 100%;
+    min-width: 980px;
+    border-collapse: collapse;
+
+    th,
+    td {
+      padding: 0.75rem;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      font-size: 0.875rem;
+    }
+    td:nth-child(2) {
+      min-width: 230px;
+    }
+    td:nth-child(4) {
+      min-width: 140px;
+    }
+  }
+
+  &__input {
+    width: 100%;
+    min-width: 100px;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    background: var(--background);
+  }
+  &__notice {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    font-size: 0.875rem;
   }
 }
