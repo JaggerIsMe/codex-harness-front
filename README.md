@@ -1,5 +1,7 @@
 # My Harness For Codex 前端
 
+[项目文档总目录](../docs/README.md) · [当前架构](../docs/architecture/overview.md) · [开发与部署导航](../docs/guides/development.md)
+
 技术栈：Vue 3 Composition API、TypeScript strict、Vite、shadcn-vue（Reka UI）、Tailwind CSS 4、Axios、Pinia、Vue Router。
 
 ## 开发

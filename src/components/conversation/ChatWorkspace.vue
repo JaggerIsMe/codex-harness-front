@@ -97,18 +97,24 @@
                   class="message-row"
                   :class="`message-row--${message.role.toLowerCase()}`"
                 >
-                  <article
-                    v-if="message.role === 'USER'"
-                    class="message-bubble message-bubble--user"
-                  >
-                    <pre>{{ message.content }}</pre>
-                    <MessageAttachments
-                      :key="String(currentConversation.id)"
-                      :attachments="message.attachments"
-                      :project-id="currentConversation.projectId"
-                      :conversation-id="currentConversation.id"
-                    />
-                  </article>
+                  <template v-if="message.role === 'USER'">
+                    <article class="message-bubble message-bubble--user">
+                      <pre>{{ message.content }}</pre>
+                      <MessageAttachments
+                        :key="String(currentConversation.id)"
+                        :attachments="message.attachments"
+                        :project-id="currentConversation.projectId"
+                        :conversation-id="currentConversation.id"
+                      />
+                    </article>
+                    <time
+                      v-if="formatMessageTime(message.createdAt)"
+                      :datetime="message.createdAt"
+                      class="message-time"
+                    >
+                      {{ formatMessageTime(message.createdAt) }}
+                    </time>
+                  </template>
 
                   <article v-else class="agent-message">
                     <header class="agent-message__header">
@@ -253,7 +259,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { computed, ref } from 'vue'
-import { useResizeObserver } from '@vueuse/core'
+import { useNow, useResizeObserver } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { ArrowDown, Ellipsis, Plus, RefreshCw as Refresh } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
@@ -345,6 +351,7 @@ const {
   },
 )
 const displayMessages = computed(() => buildConversationDisplayMessages(messages.value))
+const messageClock = useNow({ interval: 60_000 })
 const outlineVisible = computed(
   () =>
     !loading.value &&
@@ -481,6 +488,24 @@ function turnStatusLabel(status: string) {
       } as Record<string, string>
     )[status] || status
   )
+}
+
+function formatMessageTime(value?: string): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (part: number): string => String(part).padStart(2, '0')
+  const today = messageClock.value
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const day = date.toDateString()
+  const dateLabel =
+    day === today.toDateString()
+      ? '今天'
+      : day === yesterday.toDateString()
+        ? '昨天'
+        : `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  return `${dateLabel} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 function isStreaming(message: DisplayMessage) {

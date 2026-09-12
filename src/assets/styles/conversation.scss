@@ -100,7 +100,19 @@
   margin: 0 auto 34px;
 }
 .message-row--user {
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.message-time {
+  visibility: hidden;
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+}
+.message-bubble--user:hover + .message-time {
+  visibility: visible;
 }
 .message-row--assistant {
   justify-content: center;

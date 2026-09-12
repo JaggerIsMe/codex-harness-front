@@ -3,7 +3,7 @@
 ## 作用域
 
 - 本文件适用于 `harness-front`。根目录 `AGENTS.md` 的跨项目、安全和 Git 约束继续生效。
-- 该目录尚处于脚手架阶段；建立工程时使用 Vue 3 + TypeScript + Vite，并保持 Web 前端只访问平台 HTTP API 和 SSE。
+- 当前工程使用 Vue 3 + TypeScript + Vite；Web 前端通过平台 HTTP API 和共享 WebSocket 获取业务数据与实时事件。
 
 ## 工程与目录
 
@@ -11,7 +11,7 @@
 - `.vue` 文件使用 PascalCase，目录使用 kebab-case。
 - 页面放在 `src/views/<module>/`，通用业务组件放在 `src/components/`，shadcn-vue 基础组件只放在 `src/components/ui/`。
 - 生产源码只放在 `src/`；测试源码统一放在顶层 `tests/` 并镜像被测模块目录。测试通过生产模块的 Interface 使用实现，`src/` 不得依赖 `tests/`。
-- 路由入口固定为 `src/router/index.ts`；路由增多后按业务模块拆到 `src/router/modules/`，页面组件不自行注册全局路由。
+- 路由入口固定为 `src/router/index.js`，转发到 `src/router/routes.ts` 统一维护路由；页面组件不自行注册全局路由。
 - API 模块放在 `src/api/`，Axios 实例、超时、认证、错误归一化和拦截器只维护一份。跨页面状态放在 `src/stores/`，页面局部状态留在组件内。
 - 全局样式和确有必要的复杂样式放在 `src/assets/styles/`；页面布局和普通样式优先使用 Tailwind CSS。
 
@@ -27,6 +27,6 @@
 ## AI 对话与流式资源
 
 - 消息模型使用可区分的结构化内容块；Markdown 和代码块经过统一、安全的渲染入口，不在组件中散落 `v-html`。
-- SSE/流式请求保存明确的会话、Turn、事件序号和连接状态；重连遵守服务端游标语义，不用客户端文本拼接推断权威状态。
-- 使用 `AbortController` 或等价机制管理取消；组件卸载、路由切换、会话切换和用户停止生成时关闭连接并移除监听器。
+- WebSocket/流式请求保存明确的会话、Turn、事件序号和连接状态；重连遵守服务端游标语义，不用客户端文本拼接推断权威状态。
+- 使用 `AbortController` 或等价机制管理取消；会话切换或页面卸载时取消对应请求并移除会话监听器，布局卸载时关闭共享 WebSocket。用户停止生成通过中断接口处理，并等待终态校准消息。
 - 流式增量使用有界缓冲和批量刷新，避免每个 token 触发全页面深层响应式更新。
