@@ -28,6 +28,8 @@
       <span class="agent-process__chevron"><ArrowRight /></span>
     </button>
 
+    <PolicyBlockedCard v-for="(blocked, index) in policyBlocks" :key="index" :details="blocked" />
+
     <Transition>
       <div v-show="expanded" class="agent-process__timeline">
         <article
@@ -81,6 +83,8 @@ import {
   TriangleAlert as Warning,
 } from 'lucide-vue-next'
 import MessageContent from './MessageContent.vue'
+import PolicyBlockedCard from './PolicyBlockedCard.vue'
+import { parsePolicyBlock } from '@/utils/policyBlock'
 
 const props = withDefaults(
   defineProps<{ items: ProcessItem[]; streaming?: boolean; incomplete?: boolean }>(),
@@ -93,6 +97,7 @@ interface ActivityDetails {
   type?: string
   message?: string
   name?: string
+  tool?: string
   path?: string
   filePath?: string
   query?: string
@@ -101,6 +106,12 @@ interface ActivityDetails {
   action?: { query?: string; queries?: string[] }
 }
 const expanded = ref(false)
+const policyBlocks = computed(() =>
+  props.items.flatMap((item) => {
+    const blocked = item.messageType === 'ERROR' ? parsePolicyBlock(item.content || '') : null
+    return blocked ? [blocked] : []
+  }),
+)
 
 const viewItems = computed(() => props.items.map(toViewItem).filter((item) => item !== null))
 const latestSummary = computed(() => {
@@ -114,6 +125,8 @@ const latestSummary = computed(() => {
 
 function toViewItem(item: ProcessItem) {
   const content = item.content?.trim() || ''
+  if (item.messageType === 'ERROR' && parsePolicyBlock(content))
+    return viewItem(item, 'error', '平台策略拦截', parsePolicyBlock(content)!.message)
   if (item.messageType === 'COMMENTARY')
     return viewItem(item, 'commentary', '过程说明', content, true)
   if (item.messageType === 'REASONING')
@@ -150,6 +163,21 @@ function activityViewItem(item: ProcessItem, content: string) {
     return viewItem(item, 'command', '执行命令', commandText(details))
   if (details.type === 'fileChange')
     return viewItem(item, 'file', '修改文件', readableContent(content))
+  if (details.type === 'dynamicToolCall') {
+    const toolLabels: Record<string, string> = {
+      harness_execute: '执行命令',
+      harness_run_command: '执行命令',
+      harness_apply_patch: '应用文件补丁',
+      harness_view_image: '查看图片',
+      harness_generate_image: '生成图片',
+    }
+    return viewItem(
+      item,
+      'activity',
+      toolLabels[details.tool || ''] || '调用工具',
+      details.message || details.tool || '',
+    )
+  }
   const labels: Record<string, string> = {
     plan: '更新计划',
     mcpToolCall: '调用工具',
@@ -215,6 +243,7 @@ function parseDetails(content: string): ActivityDetails | null {
       type: text('type'),
       message: text('message'),
       name: text('name'),
+      tool: text('tool'),
       path: text('path'),
       filePath: text('filePath'),
       query: text('query'),

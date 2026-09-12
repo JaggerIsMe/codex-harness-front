@@ -42,7 +42,7 @@ async function fixture(page: Page) {
     workspaceName: '测试工作区',
     workspaceStatus: 'ENABLED',
     rootPath: 'D:/workspace/history-test',
-    isolationMode: 'WINDOWS_PROJECT_PROFILE',
+    isolationMode: 'LINUX_PROJECT_PROFILE_V1',
     conversationCount: 2,
   }
   const conversations = [4, 5].map((id) => ({

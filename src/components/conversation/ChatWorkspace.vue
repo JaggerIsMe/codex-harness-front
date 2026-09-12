@@ -184,7 +184,7 @@
                   :key="approval.id"
                   :approval="approval"
                   :loading="resolvingId === approval.id"
-                  @decision="decide(approval, $event)"
+                  @decision="(decision, answers) => decide(approval, decision, answers)"
                 />
               </div>
 
@@ -248,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Approval, Decision, DisplayMessage, Project } from '@/types/domain'
+import type { Approval, ApprovalAnswers, Decision, DisplayMessage, Project } from '@/types/domain'
 import EmptyState from '@/components/common/EmptyState.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppButton from '@/components/common/AppButton.vue'
@@ -491,8 +491,8 @@ function isStreaming(message: DisplayMessage) {
   )
 }
 
-async function decide(approval: Approval, decision: Decision) {
-  await conversationStore.decideApproval(approval, decision)
+async function decide(approval: Approval, decision: Decision, answers?: ApprovalAnswers) {
+  await conversationStore.decideApproval(approval, decision, answers)
   toast.success('审批决定已提交')
 }
 </script>

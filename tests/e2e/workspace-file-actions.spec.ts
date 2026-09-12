@@ -19,7 +19,7 @@ async function fixture(page: Page) {
     workspaceStatus: 'ENABLED',
     rootPath: 'D:/workspace',
     conversationCount: 1,
-    isolationMode: 'WINDOWS_PROJECT_PROFILE',
+    isolationMode: 'LINUX_PROJECT_PROFILE_V1',
   }
   const conversation = {
     id: 4,

@@ -11,7 +11,7 @@ const device = {
   deviceName: '测试设备',
   deviceCode: 'DEV-1',
   status: 'ONLINE',
-  isolationMode: 'WINDOWS_PROJECT_PROFILE',
+  isolationMode: 'LINUX_PROJECT_PROFILE_V1',
   osName: 'Windows',
   agentVersion: '1.0',
 }
@@ -35,7 +35,7 @@ const project = {
   deviceStatus: 'ONLINE',
   workspaceStatus: 'ENABLED',
   conversationCount: 1,
-  isolationMode: 'WINDOWS_PROJECT_PROFILE',
+  isolationMode: 'LINUX_PROJECT_PROFILE_V1',
 }
 const conversation = {
   id: 4,

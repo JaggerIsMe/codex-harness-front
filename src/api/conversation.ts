@@ -4,6 +4,7 @@ import type {
   Conversation,
   Turn,
   Approval,
+  ApprovalAnswers,
   Id,
   ConversationInput,
   UpdateConversationInput,
@@ -101,6 +102,9 @@ export function interruptTurn(projectId: Id, conversationId: Id, turnId: Id) {
     `/projects/${projectId}/conversations/${conversationId}/turns/${turnId}/interrupt`,
   )
 }
-export function resolveApproval(approvalId: Id, decision: Decision) {
-  return request<Approval>('post', `/approvals/${approvalId}/decision`, { decision })
+export function resolveApproval(approvalId: Id, decision: Decision, answers?: ApprovalAnswers) {
+  return request<Approval>('post', `/approvals/${approvalId}/decision`, {
+    decision,
+    ...(answers ? { answers } : {}),
+  })
 }

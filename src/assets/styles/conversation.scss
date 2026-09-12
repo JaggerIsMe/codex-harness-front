@@ -572,7 +572,8 @@
 }
 .approval-stack {
   min-height: 0;
-  max-height: 300px;
+  min-width: 0;
+  max-height: min(480px, 55dvh);
   flex-shrink: 1;
   padding: 12px 24px;
   overflow-y: auto;
@@ -580,6 +581,7 @@
   background: var(--warning-surface);
 }
 .approval-card {
+  min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--warning-border);
   border-radius: 10px;
@@ -595,6 +597,7 @@
   gap: 8px;
 }
 .approval-card__heading {
+  flex-wrap: wrap;
   justify-content: space-between;
   color: var(--warning);
   font-size: 12px;
@@ -603,17 +606,153 @@
   color: var(--muted-foreground);
   font-size: 10px;
 }
-.approval-card pre {
-  max-height: 90px;
-  margin: 10px 0;
-  padding: 10px;
-  border-radius: 7px;
-  background: var(--warning-surface);
+.approval-card__body {
+  min-width: 0;
+  max-height: clamp(100px, 24dvh, 240px);
+  margin: 12px 0;
+  padding-right: 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+.approval-card__summary,
+.approval-question > p {
+  white-space: pre-wrap;
+}
+.approval-question + .approval-question,
+.approval-fields,
+.approval-card__raw {
+  margin-top: 12px;
+}
+.approval-question h4 {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.approval-fields > div,
+.approval-question__options > div {
+  display: grid;
+  grid-template-columns: minmax(80px, 120px) minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.approval-fields dt,
+.approval-question__options dt,
+.approval-card__empty {
+  color: var(--muted-foreground);
+}
+.approval-fields dd,
+.approval-question__options dd {
+  min-width: 0;
+  white-space: pre-wrap;
+}
+.approval-fields code {
+  font-size: 12px;
+}
+.approval-card__raw {
+  summary {
+    width: fit-content;
+    cursor: pointer;
+    color: var(--muted-foreground);
+    font-size: 12px;
+  }
+  pre {
+    margin-top: 8px;
+    padding: 10px;
+    border-radius: 7px;
+    background: var(--muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+  }
 }
 .approval-actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.approval-question__choices {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+.approval-question__choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.approval-question__choice:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--muted);
+}
+.approval-question__choice input {
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+.approval-question__choice > span {
+  display: grid;
   gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.approval-question__answer {
+  display: grid;
+  gap: 6px;
+}
+.approval-question__answer textarea,
+.approval-question__answer input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+}
+.approval-card__notice {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.policy-blocked-card {
+  margin: 10px 0;
+  padding: 14px;
+  border: 1px solid var(--warning-border);
+  border-radius: 10px;
+  background: var(--warning-surface);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  > strong {
+    color: var(--warning);
+  }
+  > p {
+    margin-top: 8px;
+  }
+}
+.policy-blocked-card__details {
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.policy-blocked-card__guidance {
+  color: var(--muted-foreground);
 }
 .composer-shell {
   display: flex;
@@ -812,6 +951,19 @@
   list-style-type: decimal;
 }
 @media (max-width: 760px) {
+  .approval-stack {
+    padding: 8px 12px;
+  }
+  .approval-card {
+    padding: 12px;
+  }
+  .approval-fields > div,
+  .approval-question__options > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .approval-actions > button {
+    flex: 1 1 auto;
+  }
   .conversation-header {
     padding: 12px 18px;
     gap: 12px;

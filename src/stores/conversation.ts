@@ -3,6 +3,7 @@ import type {
   Turn,
   Message,
   Approval,
+  ApprovalAnswers,
   Id,
   Decision,
   RealtimeEvent,
@@ -355,7 +356,11 @@ export const useConversationStore = defineStore('conversation', () => {
         if (String(currentTurn.value.id) === String(latestConversation?.latestTurnId))
           turnError.value =
             latestConversation?.latestTurnFailureMessage || turnError.value || 'Agent 执行失败'
-      } else if (latestConversation?.status !== 'FAILED') turnError.value = ''
+      } else if (
+        latestConversation?.status !== 'FAILED' &&
+        currentTurn.value?.status !== 'WAITING_APPROVAL'
+      )
+        turnError.value = ''
       upsertConversation(currentConversation.value)
       if (currentConversation.value)
         navigation.upsert(currentConversation.value, { promote: !options.silent })
@@ -459,12 +464,12 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
-  async function decideApproval(approval: Approval, decision: Decision) {
+  async function decideApproval(approval: Approval, decision: Decision, answers?: ApprovalAnswers) {
     if (!approval || resolvingId.value) return
     const isCurrent = operationGuard()
     resolvingId.value = approval.id
     try {
-      await resolveApproval(approval.id, decision)
+      await resolveApproval(approval.id, decision, answers)
       if (isCurrent()) await refreshCurrent({ silent: true })
     } finally {
       if (isCurrent()) resolvingId.value = null
@@ -616,6 +621,11 @@ export const useConversationStore = defineStore('conversation', () => {
         event.type === 'TURN_FAILED'
           ? event.payload?.reason || event.payload?.message || 'Agent 执行失败'
           : ''
+    } else if (event.type === 'ERROR' && event.payload?.commandType === 'RESOLVE_APPROVAL') {
+      turnError.value =
+        event.payload.errorCode === 'APPROVAL_INPUT_INVALID'
+          ? '回答未被接受，请重新选择或填写后提交。' + (event.payload.message || '')
+          : '审批未确认送达 Agent；请停止本轮后重试。' + (event.payload.message || '')
     } else if (event.type === 'ERROR' && event.payload?.commandType === 'START_TURN') {
       currentTurn.value = {
         ...currentTurn.value,

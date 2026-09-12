@@ -21,7 +21,14 @@
             :value="String(device.id)"
             :disabled="!ready(device)"
           >
-            {{ device.deviceName }} · {{ ready(device) ? '可用' : '离线或尚未配置执行环境' }}
+            {{ device.deviceName }} ·
+            {{
+              ready(device)
+                ? '可用'
+                : device.status === 'ONLINE' && !hasReadIsolation(device)
+                  ? '尚未启用读取隔离'
+                  : '离线或尚未配置执行环境'
+            }}
           </option>
         </AppSelect>
       </label>
@@ -65,8 +72,10 @@ const requestKey = ref('')
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
+const hasReadIsolation = (d: ExecutableDevice) =>
+  ['LINUX_PROJECT_PROFILE_V1', 'WINDOWS_LPAC_V1'].includes(d.isolationMode)
 const ready = (d: ExecutableDevice) =>
-  d.status === 'ONLINE' && d.isolationMode === 'WINDOWS_PROJECT_PROFILE' && d.provisioningAvailable
+  d.status === 'ONLINE' && hasReadIsolation(d) && d.provisioningAvailable
 watch(
   () => props.modelValue,
   async (open, _, onCleanup) => {

@@ -1,5 +1,6 @@
 export type Id = number | string
 export type Decision = 'ACCEPT' | 'ACCEPT_FOR_SESSION' | 'DECLINE' | 'CANCEL'
+export type ApprovalAnswers = Record<string, { answers: string[] }>
 export type Json = string | number | boolean | null | unknown[] | Record<string, unknown>
 export interface Device {
   id: number
