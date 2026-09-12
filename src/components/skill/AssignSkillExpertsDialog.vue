@@ -55,7 +55,7 @@
         位。已绑定全部目标版本和已禁用的专家不在候选列表中。同一专家的所选 Skill 一起保存。
       </p>
       <p v-if="loading" role="status">正在加载专家…</p>
-      <table v-else class="w-full table-fixed text-sm">
+      <table v-else class="skill-assignment__table w-full table-fixed text-sm">
         <thead>
           <tr>
             <th class="w-10">
@@ -75,7 +75,7 @@
         </thead>
         <tbody>
           <tr v-for="item in candidates" :key="item.expertId" class="border-t">
-            <td class="py-3">
+            <td>
               <input
                 type="checkbox"
                 :aria-label="`选择 ${item.name}`"

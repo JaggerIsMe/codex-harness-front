@@ -118,9 +118,9 @@ beforeEach(() => {
   )
 })
 afterEach(() => wrapper?.unmount())
-async function open() {
+async function open(mode: 'CREATE' | 'UPDATE' = 'UPDATE') {
   wrapper = mount(BatchUploadSkillDialog, {
-    props: { modelValue: true, initialMode: 'UPDATE', skills: [skill], selectedSkills: [skill] },
+    props: { modelValue: true, initialMode: mode, skills: [skill], selectedSkills: [skill] },
     global: { stubs: { AppDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
   })
   await flushPromises()
@@ -143,6 +143,58 @@ async function preview() {
   await button('校验预览').trigger('click')
   await flushPromises()
 }
+
+it('includes a free-text tag in batch creation and invalidates preview when it changes', async () => {
+  await open('CREATE')
+  await files()
+  await wrapper.get('input[aria-label="review.zip 标签"]').setValue('团队常用')
+  await preview()
+  expect(previewSkillImport).toHaveBeenLastCalledWith(
+    'CREATE',
+    [expect.objectContaining({ tag: '团队常用' })],
+    expect.any(AbortSignal),
+  )
+  expect(button('批量上传并启用').attributes('disabled')).toBeUndefined()
+  await wrapper.get('input[aria-label="review.zip 标签"]').setValue('代码审查')
+  expect(button('批量上传并启用').attributes('disabled')).toBeDefined()
+})
+
+it.each(['CREATE', 'UPDATE'] as const)(
+  'applies a shared tag to every row in %s and supports clearing it',
+  async (mode) => {
+    await open(mode)
+    await files(['review.zip', 'another.zip'])
+    await wrapper.get('input[aria-label="统一标签"]').setValue('  团队常用  ')
+    await wrapper.get('button[aria-label="将标签应用到全部"]').trigger('click')
+    for (const name of ['review.zip', 'another.zip'])
+      expect(
+        (wrapper.get(`input[aria-label="${name} 标签"]`).element as HTMLInputElement).value,
+      ).toBe('团队常用')
+    await preview()
+    expect(
+      vi
+        .mocked(previewSkillImport)
+        .mock.calls.at(-1)![1]
+        .map((item) => item.tag),
+    ).toEqual(['团队常用', '团队常用'])
+    await wrapper.get('input[aria-label="统一标签"]').setValue('')
+    await wrapper.get('input[aria-label="统一标签"]').trigger('keyup.enter')
+    await preview()
+    expect(
+      vi
+        .mocked(previewSkillImport)
+        .mock.calls.at(-1)![1]
+        .map((item) => item.tag),
+    ).toEqual(['', ''])
+  },
+)
+
+it('leaves the tag unspecified in batch update until it is explicitly edited', async () => {
+  await open()
+  await files()
+  await preview()
+  expect(vi.mocked(previewSkillImport).mock.calls.at(-1)![1][0]!.tag).toBeUndefined()
+})
 
 it('uses the preview when the formerly active version has been disabled', async () => {
   await open()
@@ -249,6 +301,24 @@ it('retains only failed entries for a new preview after partial success', async 
   await flushPromises()
   expect(vi.mocked(previewSkillImport).mock.calls.at(-1)![1]).toHaveLength(1)
 })
+
+it.each(['CREATE', 'UPDATE'] as const)(
+  'retries a failed upload and allows reselecting the same file in %s',
+  async (mode) => {
+    vi.mocked(uploadSkillImport).mockRejectedValueOnce(new Error('上传失败'))
+    await open(mode)
+    await files()
+    expect(wrapper.text()).toContain('上传失败')
+    expect(wrapper.text()).toContain('已添加 1 个文件')
+    await button('重试上传').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('上传完成，请配置并预览')
+    await button('移除').trigger('click')
+    await files()
+    expect(uploadSkillImport).toHaveBeenCalledTimes(3)
+    expect(wrapper.text()).toContain('已添加 1 个文件')
+  },
+)
 
 it('limits concurrent uploads to three and cancels active requests on close', async () => {
   const complete: (() => void)[] = []

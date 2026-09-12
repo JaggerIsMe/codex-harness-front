@@ -1,12 +1,12 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ExpertEditDialog from '@/components/expert/ExpertEditDialog.vue'
-import { getSkills } from '@/api/skill'
+import { getSkillOptions } from '@/api/skill'
 import { saveExpert } from '@/api/expert'
 import { listSelectableMcpVersions } from '@/api/mcp'
 import type { Expert } from '@/types/expert'
 
-vi.mock('@/api/skill', () => ({ getSkills: vi.fn() }))
+vi.mock('@/api/skill', () => ({ getSkillOptions: vi.fn() }))
 vi.mock('@/api/expert', () => ({ saveExpert: vi.fn() }))
 vi.mock('@/api/mcp', () => ({ listSelectableMcpVersions: vi.fn() }))
 
@@ -14,7 +14,7 @@ let wrapper: VueWrapper
 afterEach(() => wrapper?.unmount())
 
 it('upgrades existing Skill and MCP bindings to their latest active versions', async () => {
-  vi.mocked(getSkills).mockResolvedValue({
+  vi.mocked(getSkillOptions).mockResolvedValue({
     status: 'success',
     code: 200,
     info: '',
@@ -98,9 +98,8 @@ it('upgrades existing Skill and MCP bindings to their latest active versions', a
   expect(wrapper.text()).not.toContain('code-review · 1.0.0')
   expect(wrapper.text()).toContain('GitHub MCP · v2 · github · STDIO')
   expect(wrapper.text()).not.toContain('不可用 MCP 配置版本 #70')
-  const checkboxes = wrapper.findAll('input[type="checkbox"]')
-  expect((checkboxes[0].element as HTMLInputElement).checked).toBe(true)
-  expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true)
+  expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0)
+  expect(wrapper.findAll('li')).toHaveLength(2)
   await wrapper
     .findAll('button')
     .find((button) => button.text() === '保存草稿')!
@@ -113,7 +112,7 @@ it('upgrades existing Skill and MCP bindings to their latest active versions', a
 })
 
 it('retains unavailable MCP bindings for explicit removal when there is no replacement', async () => {
-  vi.mocked(getSkills).mockResolvedValue({ status: 'success', code: 200, info: '', data: [] })
+  vi.mocked(getSkillOptions).mockResolvedValue({ status: 'success', code: 200, info: '', data: [] })
   vi.mocked(listSelectableMcpVersions).mockResolvedValue({
     status: 'success',
     code: 200,
@@ -150,8 +149,11 @@ it('retains unavailable MCP bindings for explicit removal when there is no repla
   })
   await wrapper.setProps({ modelValue: true })
   await flushPromises()
-  expect(wrapper.text()).toContain('不可用 MCP 配置版本 #70（保存前需取消）')
-  const checkboxes = wrapper.findAll('input[type="checkbox"]')
-  expect((checkboxes[0].element as HTMLInputElement).checked).toBe(false)
-  expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true)
+  expect(wrapper.text()).toContain('不可用 MCP 配置版本 #70（保存前需移除）')
+  expect(wrapper.text()).not.toContain('Other MCP')
+  expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0)
+  await wrapper
+    .get('button[aria-label="移除 不可用 MCP 配置版本 #70（保存前需移除）"]')
+    .trigger('click')
+  expect(wrapper.text()).not.toContain('不可用 MCP 配置版本 #70')
 })

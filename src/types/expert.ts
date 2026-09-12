@@ -1,4 +1,10 @@
 import type { Id } from './domain'
+export interface ExpertBindingOption {
+  id: number
+  label: string
+  tag?: string
+  unavailable?: boolean
+}
 export interface Expert {
   id: Id
   name: string

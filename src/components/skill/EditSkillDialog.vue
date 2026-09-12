@@ -7,6 +7,13 @@
       <FormField label="描述" prop="description"
         ><AppInput v-model="form.description" type="textarea" :rows="4" maxlength="1000"
       /></FormField>
+      <FormField label="标签" prop="tag"
+        ><AppInput
+          v-model="form.tag"
+          label="标签"
+          maxlength="200"
+          placeholder="选填，例如：代码审查、团队常用"
+      /></FormField>
       <FormField label="状态" prop="status"
         ><AppSelect v-model="form.status"
           ><option value="ENABLED">启用</option>
@@ -36,7 +43,7 @@ const props = defineProps<{ modelValue: boolean; skill: Skill | null }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [value: Skill] }>()
 const formRef = ref<FormHandle | null>(null)
 const submitting = ref(false)
-const form = reactive({ skillName: '', description: '', status: 'ENABLED' })
+const form = reactive({ skillName: '', description: '', tag: '', status: 'ENABLED' })
 const rules: FormRules = {
   skillName: [
     { required: true, message: '请输入 Skill 名称', trigger: 'blur' },
@@ -50,6 +57,7 @@ watch(
       Object.assign(form, {
         skillName: props.skill.skillName,
         description: props.skill.description,
+        tag: props.skill.tag || '',
         status: props.skill.status,
       })
   },

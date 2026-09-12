@@ -7,9 +7,20 @@ import type {
   SkillImportCommit,
   SkillImportSubmission,
 } from '@/types/skill-import'
-import type { Skill, SkillVersion, Id, SearchParams, SkillInput } from '@/types/domain'
-export function getSkills(params: SearchParams, signal?: AbortSignal) {
-  return request<Skill[]>('get', `/skills`, undefined, { params, signal })
+import type { Skill, SkillVersion, Id, SearchParams, SkillInput, PageResult } from '@/types/domain'
+import type { PageQuery } from '@/utils/pagination'
+export function getSkills(params: PageQuery & { status?: string }, signal?: AbortSignal) {
+  return request<PageResult<Skill>>('get', `/skills`, undefined, { params, signal })
+}
+export function getSkillOptions(params: SearchParams = {}, signal?: AbortSignal) {
+  return request<Skill[]>('get', '/skills/options', undefined, { params, signal })
+}
+export function getSelectedSkills(ids: Id[], signal?: AbortSignal) {
+  return request<Skill[]>('get', '/skills/selected', undefined, {
+    params: { ids: ids.join(',') },
+    signal,
+    localErrors: true,
+  })
 }
 export function createSkill(data: FormData) {
   return request<Skill>('post', `/skills`, data, { timeout: 60000 })

@@ -15,37 +15,60 @@
         提交结果待确认。请恢复原提交，避免重复上传。提交标识：{{ pending.submissionId }}
       </div>
       <div class="flex flex-wrap items-center gap-3">
-        <label class="text-sm"
-          >选择 ZIP
-          <input
-            type="file"
-            multiple
-            accept=".zip,application/zip"
-            :disabled="locked"
-            aria-label="选择多个 Skill ZIP"
-            @change="selectFiles"
-          />
-        </label>
-        <label class="flex items-center gap-2 text-sm"
-          ><span class="whitespace-nowrap">统一版本号</span>
-          <input
-            v-model="commonVersion"
-            class="skill-import__input"
-            maxlength="64"
-            :disabled="locked"
-            placeholder="例如 1.1.0"
-            @keyup.enter="applyVersion"
-          />
-        </label>
-        <AppButton :disabled="locked || !commonVersion.trim()" @click="applyVersion"
-          >应用到全部</AppButton
-        >
+        <SkillFilePicker
+          label="选择 ZIP 文件"
+          input-label="选择多个 Skill ZIP"
+          multiple
+          :disabled="locked"
+          @selected="selectFiles"
+        />
+        <span class="text-sm text-muted-foreground" role="status">{{
+          rows.length ? `已添加 ${rows.length} 个文件` : '支持多选或拖入 ZIP 文件'
+        }}</span>
         <AppButton
           v-if="rows.some((row) => row.uploadState === 'FAILED')"
           :disabled="locked"
           @click="retryUploads(selectedSkills)"
           >重试上传</AppButton
         >
+      </div>
+      <div class="grid grid-cols-2 gap-4" aria-label="批量设置">
+        <div class="flex min-w-0 items-center gap-2">
+          <label class="flex min-w-0 flex-1 items-center gap-2 text-sm"
+            ><span class="whitespace-nowrap">统一版本号</span>
+            <input
+              v-model="commonVersion"
+              class="skill-import__input"
+              maxlength="64"
+              :disabled="locked"
+              placeholder="例如 1.1.0"
+              @keyup.enter="applyVersion"
+            />
+          </label>
+          <AppButton
+            label="将版本号应用到全部"
+            :disabled="locked || !commonVersion.trim()"
+            @click="applyVersion"
+            >应用到全部</AppButton
+          >
+        </div>
+        <div class="flex min-w-0 items-center gap-2">
+          <label class="flex min-w-0 flex-1 items-center gap-2 text-sm"
+            ><span class="whitespace-nowrap">统一标签</span>
+            <input
+              v-model="commonTag"
+              class="skill-import__input"
+              maxlength="200"
+              :disabled="locked"
+              aria-label="统一标签"
+              placeholder="输入标签，可应用到全部"
+              @keyup.enter="applyTag"
+            />
+          </label>
+          <AppButton label="将标签应用到全部" :disabled="locked || !rows.length" @click="applyTag"
+            >应用到全部</AppButton
+          >
+        </div>
       </div>
       <p v-if="!rows.length && !result" class="py-8 text-center text-muted-foreground">
         选择或拖入多个 ZIP 文件
@@ -58,6 +81,7 @@
               <th>{{ mode === 'CREATE' ? 'Skill 名称 / 描述' : '目标 Skill' }}</th>
               <th>当前激活版本</th>
               <th>新版本</th>
+              <th>标签</th>
               <th>校验与结果</th>
               <th>操作</th>
             </tr>
@@ -122,6 +146,22 @@
                     @input="invalidate"
                   />
                 </td>
+                <td>
+                  <input
+                    v-model="row.tag"
+                    class="skill-import__input"
+                    :aria-label="`${row.file.name} 标签`"
+                    :placeholder="tagPlaceholder(row.skillId)"
+                    maxlength="200"
+                    :disabled="locked"
+                    @input="invalidate"
+                  />
+                  <span
+                    v-if="mode === 'UPDATE' && row.tag === ''"
+                    class="text-xs text-muted-foreground"
+                    >将清空标签</span
+                  >
+                </td>
                 <td aria-live="polite">
                   <span :class="itemFailed(row.itemId) ? 'text-destructive' : ''">{{
                     itemMessage(row.itemId) || row.message
@@ -136,21 +176,16 @@
                 </td>
                 <td>
                   <AppButton link :disabled="locked" @click="remove(row.itemId)">移除</AppButton>
-                  <label class="block text-xs"
-                    >重新选择
-                    <input
-                      type="file"
-                      accept=".zip,application/zip"
-                      class="w-40"
-                      :disabled="locked"
-                      :aria-label="`替换 ${row.file.name}`"
-                      @change="replaceFile(row.itemId, $event)"
-                    />
-                  </label>
+                  <SkillFilePicker
+                    label="重新选择"
+                    :input-label="`替换 ${row.file.name}`"
+                    :disabled="locked"
+                    @selected="replaceFile(row.itemId, $event)"
+                  />
                 </td>
               </tr>
               <tr v-if="previewItem(row.itemId)?.experts.length">
-                <td colspan="6">
+                <td colspan="7">
                   <details>
                     <summary class="cursor-pointer text-primary">
                       查看 {{ previewItem(row.itemId)?.skillName }} 的受影响专家
@@ -254,6 +289,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import SkillFilePicker from '@/components/skill/SkillFilePicker.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { useSkillImport } from '@/composables/useSkillImport'
@@ -295,6 +331,7 @@ const {
   startNew,
 } = useSkillImport((value) => emit('completed', value))
 const commonVersion = ref('')
+const commonTag = ref('')
 const confirmed = ref(false)
 watch(
   () => props.modelValue,
@@ -356,16 +393,23 @@ function applyVersion() {
   })
   invalidate()
 }
-async function selectFiles(event: Event) {
-  const input = event.target as HTMLInputElement
-  const files = Array.from(input.files ?? [])
-  input.value = ''
+function applyTag() {
+  if (locked.value) return
+  rows.value.forEach((row) => {
+    row.tag = commonTag.value.trim()
+  })
+  invalidate()
+}
+function tagPlaceholder(id: number | null) {
+  if (mode.value === 'CREATE') return '标签，选填'
+  const tag = props.skills.find((skill) => skill.id === id)?.tag
+  return tag ? `保留原标签：${tag}` : '未填写则保留原标签'
+}
+async function selectFiles(files: File[]) {
   await add(files, props.selectedSkills)
 }
-async function replaceFile(id: string, event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
+async function replaceFile(id: string, files: File[]) {
+  const file = files[0]
   if (file) await replace(id, file, props.selectedSkills)
 }
 async function drop(event: DragEvent) {

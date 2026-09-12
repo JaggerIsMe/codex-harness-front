@@ -128,6 +128,7 @@ export function useSkillImport(completed: (result: SkillImportSubmission) => voi
         skillId: null,
         skillName: '',
         description: '',
+        tag: mode.value === 'CREATE' ? '' : undefined,
         version: '',
         file,
         uploadState: valid ? 'WAITING' : 'FAILED',
@@ -197,12 +198,13 @@ export function useSkillImport(completed: (result: SkillImportSubmission) => voi
     try {
       const response = await previewSkillImport(
         mode.value,
-        rows.value.map(({ itemId, uploadId, skillId, skillName, description, version }) => ({
+        rows.value.map(({ itemId, uploadId, skillId, skillName, description, tag, version }) => ({
           itemId,
           uploadId,
           skillId,
           skillName,
           description,
+          tag,
           version,
         })),
         controller.signal,

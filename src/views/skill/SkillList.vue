@@ -38,8 +38,8 @@
               <AppInput
                 v-model="skillSearch.keyword"
                 clearable
-                placeholder="搜索名称或描述"
-                @keyup.enter="loadSkills"
+                placeholder="搜索名称、描述或标签"
+                @keyup.enter="searchSkills"
               />
             </div>
             <div>
@@ -47,15 +47,24 @@
                 v-model="skillSearch.status"
                 clearable
                 placeholder="全部状态"
-                @keyup.enter="loadSkills"
+                @keyup.enter="searchSkills"
                 ><option value="ENABLED">已启用</option>
                 <option value="DISABLED">已停用</option></AppSelect
               >
             </div>
             <div class="search-actions">
-              <AppButton tone="primary" :icon="Search" @click="loadSkills">查询</AppButton
+              <AppButton tone="primary" :icon="Search" @click="searchSkills">查询</AppButton
               ><AppButton @click="resetSkills">重置</AppButton>
             </div>
+          </div>
+          <div v-if="selectedSkillIds.length" class="mb-3 flex items-center gap-3 text-sm">
+            <span>已跨页选择 {{ selectedSkillIds.length }} 个 Skill</span>
+            <AppButton
+              link
+              :disabled="loadingBatch || loadingAssignment"
+              @click="selectedSkillIds = []"
+              >清空选择</AppButton
+            >
           </div>
           <div class="table-area skill-registry">
             <Table class="skill-registry__table"
@@ -64,21 +73,27 @@
                   ><TableHead style="width: 32px"
                     ><input
                       type="checkbox"
-                      aria-label="选择当前列表全部 Skill"
+                      aria-label="选择当前页全部 Skill"
+                      :disabled="
+                        loadingSkills || loadingBatch || loadingAssignment || !skills.length
+                      "
                       :checked="
                         skills.length > 0 &&
                         skills.every((skill) => selectedSkillIds.includes(skill.id))
                       "
-                      @change="selectAllSkills" /></TableHead
-                  ><TableHead style="width: 18%">Skill</TableHead><TableHead>描述</TableHead
+                      @change="
+                        selectPage(($event.target as HTMLInputElement).checked)
+                      " /></TableHead
+                  ><TableHead style="width: 16%">Skill</TableHead><TableHead>描述</TableHead
+                  ><TableHead style="width: 14%">标签</TableHead
                   ><TableHead style="width: 7%">版本</TableHead
                   ><TableHead style="width: 11%">状态</TableHead
-                  ><TableHead style="width: 20%">更新时间</TableHead
-                  ><TableHead style="width: 20%">操作</TableHead></TableRow
+                  ><TableHead style="width: 16%">更新时间</TableHead
+                  ><TableHead style="width: 15%">操作</TableHead></TableRow
                 ></TableHeader
               ><TableBody
                 ><TableRow v-if="loadingSkills"
-                  ><TableCell :colspan="7" class="text-center">加载中…</TableCell></TableRow
+                  ><TableCell :colspan="8" class="text-center">加载中…</TableCell></TableRow
                 ><template v-for="row in skills" :key="row.id"
                   ><TableRow
                     ><TableCell
@@ -86,6 +101,7 @@
                         v-model="selectedSkillIds"
                         type="checkbox"
                         :value="row.id"
+                        :disabled="loadingBatch || loadingAssignment"
                         :aria-label="`选择 ${row.skillName}`" /></TableCell
                     ><TableCell
                       ><div class="primary-cell">
@@ -96,6 +112,13 @@
                       ><span class="skill-description" :title="row.description">{{
                         row.description
                       }}</span></TableCell
+                    ><TableCell
+                      ><span
+                        class="skill-description"
+                        :title="row.tag"
+                        :aria-label="row.tag ? `标签：${row.tag}` : '无标签'"
+                        >{{ row.tag || '—' }}</span
+                      ></TableCell
                     ><TableCell>{{ row.versionCount }}</TableCell
                     ><TableCell
                       ><AppBadge :tone="row.status === 'ENABLED' ? 'success' : 'info'">{{
@@ -109,7 +132,7 @@
                       ></TableCell
                     ></TableRow
                   ><TableRow
-                    ><TableCell :colspan="7"
+                    ><TableCell :colspan="8"
                       ><details>
                         <summary class="cursor-pointer text-primary">查看版本</summary>
                         <div class="version-panel">
@@ -182,13 +205,20 @@
                     ></TableRow
                   ></template
                 ><TableRow v-if="!skills.length && !loadingSkills"
-                  ><TableCell :colspan="7" class="text-center text-muted-foreground"
+                  ><TableCell :colspan="8" class="text-center text-muted-foreground"
                     >暂无 Skill，点击右上角上传</TableCell
                   ></TableRow
                 ></TableBody
               ></Table
             >
           </div>
+          <PaginationBar
+            :page="page"
+            :size="size"
+            :total="total"
+            :loading="loadingSkills"
+            @change="loadSkills"
+          />
         </section>
       </TabsContent>
 
@@ -230,28 +260,45 @@ import AppBadge from '@/components/common/AppBadge.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import PaginationBar from '@/components/common/PaginationBar.vue'
+import { useSkillList } from '@/composables/useSkillList'
 import BatchUploadSkillDialog from '@/components/skill/BatchUploadSkillDialog.vue'
 import type { SkillImportMode, SkillImportSubmission } from '@/types/skill-import'
 import { Send as Promotion, Search, Upload } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { confirmAction } from '@/lib/confirm'
-import { downloadSkillVersion, getSkills, updateSkillVersionStatus } from '../../api/skill'
+import {
+  downloadSkillVersion,
+  getSkillOptions,
+  getSelectedSkills,
+  updateSkillVersionStatus,
+} from '../../api/skill'
 import EditSkillDialog from '../../components/skill/EditSkillDialog.vue'
 import AssignSkillExpertsDialog from '@/components/skill/AssignSkillExpertsDialog.vue'
 import SkillAssignmentHistory from '@/components/skill/SkillAssignmentHistory.vue'
 import UploadSkillDialog from '../../components/skill/UploadSkillDialog.vue'
 
 const activeTab = ref('registry')
-const skillError = ref('')
-const skills = ref<Skill[]>([])
-const loadingSkills = ref(false)
+const {
+  skills,
+  page,
+  size,
+  total,
+  skillError,
+  loadingSkills,
+  selectedSkillIds,
+  skillSearch,
+  loadSkills,
+  searchSkills,
+  resetSkills,
+  selectPage,
+} = useSkillList()
 const uploadVisible = ref(false)
 const editVisible = ref(false)
 const assignVisible = ref(false)
 const assignmentRevision = ref(0)
 const assignmentSkills = ref<Skill[]>([])
-const selectedSkillIds = ref<number[]>([])
 const batchVisible = ref(false)
 const batchMode = ref<SkillImportMode>('CREATE')
 const batchSkills = ref<Skill[]>([])
@@ -261,26 +308,35 @@ const selectedSkill = ref<Skill | null>(null)
 const initialVersionId = ref<number | null>(null)
 const initialVersionIds = ref<number[] | undefined>()
 const loadingAssignment = ref(false)
-const skillSearch = reactive({ keyword: '', status: '' })
-
-function selectAllSkills(event: Event) {
-  selectedSkillIds.value = (event.target as HTMLInputElement).checked
-    ? skills.value.map((skill) => skill.id)
-    : []
-}
+const optionRequests = new Set<AbortController>()
+onBeforeUnmount(() => optionRequests.forEach((request) => request.abort()))
 async function openBatch(mode: SkillImportMode) {
+  if (loadingBatch.value || loadingAssignment.value) return
+  const selectedIds = [...selectedSkillIds.value]
+  if (mode === 'UPDATE' && selectedIds.length > 50) {
+    skillError.value = '批量更新每批最多选择 50 个 Skill'
+    return
+  }
+  const controller = new AbortController()
+  optionRequests.add(controller)
   loadingBatch.value = true
   try {
-    const response = await getSkills({})
-    batchSkills.value = response.data
-    batchSelectedSkills.value = response.data.filter((skill) =>
-      selectedSkillIds.value.includes(skill.id),
-    )
+    const options =
+      mode === 'CREATE'
+        ? []
+        : selectedIds.length
+          ? (await getSelectedSkills(selectedIds, controller.signal)).data
+          : (await getSkillOptions({}, controller.signal)).data
+    if (controller.signal.aborted) return
+    batchSkills.value = options
+    batchSelectedSkills.value = options.filter((skill) => selectedIds.includes(skill.id))
     batchMode.value = mode
     batchVisible.value = true
   } catch (cause) {
-    skillError.value = cause instanceof Error ? cause.message : 'Skill 加载失败'
+    if (!controller.signal.aborted)
+      skillError.value = cause instanceof Error ? cause.message : 'Skill 加载失败'
   } finally {
+    optionRequests.delete(controller)
     loadingBatch.value = false
   }
 }
@@ -291,22 +347,6 @@ function handleBatchCompleted(result: SkillImportSubmission) {
   selectedSkillIds.value = []
   void loadSkills()
 }
-async function loadSkills() {
-  loadingSkills.value = true
-  skillError.value = ''
-  try {
-    const response = await getSkills({ ...skillSearch })
-    skills.value = response.data || []
-  } catch (error) {
-    skillError.value = error instanceof Error ? error.message : 'Skill 加载失败'
-  } finally {
-    loadingSkills.value = false
-  }
-}
-function resetSkills() {
-  Object.assign(skillSearch, { keyword: '', status: '' })
-  loadSkills()
-}
 function openUpload(skill: Skill | null = null) {
   selectedSkill.value = skill
   uploadVisible.value = true
@@ -316,29 +356,43 @@ function openEdit(skill: Skill) {
   editVisible.value = true
 }
 async function openAssign(versionId: number | null = null) {
+  if (loadingAssignment.value || loadingBatch.value) return
+  const controller = new AbortController()
+  optionRequests.add(controller)
   loadingAssignment.value = true
   try {
-    assignmentSkills.value = (await getSkills({})).data
+    const source = skills.value.find((s) => s.versions.some((v) => v.id === versionId))
+    const response = source
+      ? await getSelectedSkills([source.id], controller.signal)
+      : await getSkillOptions({ status: 'ENABLED' }, controller.signal)
+    if (controller.signal.aborted) return
+    assignmentSkills.value = response.data
     initialVersionId.value = versionId
     initialVersionIds.value = undefined
     assignVisible.value = true
   } catch (error) {
-    skillError.value = error instanceof Error ? error.message : 'Skill 加载失败'
+    if (!controller.signal.aborted)
+      skillError.value = error instanceof Error ? error.message : 'Skill 加载失败'
   } finally {
+    optionRequests.delete(controller)
     loadingAssignment.value = false
   }
 }
 async function openBatchAssign() {
-  if (loadingAssignment.value) return
+  if (loadingAssignment.value || loadingBatch.value) return
   if (!selectedSkillIds.value.length || selectedSkillIds.value.length > 30) {
     skillError.value = '批量分配请选择 1～30 个 Skill'
     return
   }
   loadingAssignment.value = true
   skillError.value = ''
+  const selectedIds = [...selectedSkillIds.value]
+  const controller = new AbortController()
+  optionRequests.add(controller)
   try {
-    const all = (await getSkills({})).data
-    const chosen = selectedSkillIds.value.map((id) => all.find((s) => s.id === id))
+    const all = (await getSelectedSkills(selectedIds, controller.signal)).data
+    if (controller.signal.aborted) return
+    const chosen = selectedIds.map((id) => all.find((s) => s.id === id))
     if (
       chosen.some(
         (s) => !s || s.status !== 'ENABLED' || !s.versions.some((v) => v.status === 'ACTIVE'),
@@ -352,8 +406,10 @@ async function openBatchAssign() {
     initialVersionIds.value = chosen.map((s) => s!.versions.find((v) => v.status === 'ACTIVE')!.id)
     assignVisible.value = true
   } catch (error) {
-    skillError.value = error instanceof Error ? error.message : 'Skill 加载失败'
+    if (!controller.signal.aborted)
+      skillError.value = error instanceof Error ? error.message : 'Skill 加载失败'
   } finally {
+    optionRequests.delete(controller)
     loadingAssignment.value = false
   }
 }

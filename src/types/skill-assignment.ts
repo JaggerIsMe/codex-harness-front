@@ -58,6 +58,18 @@ export interface AssignmentSubmission {
   complete: boolean
   items: AssignmentResult[]
   targets?: AssignmentTarget[]
+  expertResults?: AssignmentCounts
+  bindingResults?: AssignmentCounts
+  ownerId?: number
+  ownerName?: string
+  canResume?: boolean
+}
+export interface AssignmentCounts {
+  total: number
+  successCount: number
+  failedCount: number
+  skippedCount: number
+  pendingCount: number
 }
 export interface AssignmentHistory {
   batchId: string
@@ -68,4 +80,9 @@ export interface AssignmentHistory {
   failedCount: number
   skippedCount: number
   targets?: AssignmentTarget[]
+  expertResults?: AssignmentCounts
+  bindingResults?: AssignmentCounts
+  ownerId?: number
+  ownerName?: string
+  complete?: boolean
 }

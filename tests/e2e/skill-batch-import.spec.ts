@@ -38,7 +38,8 @@ test('batch update previews affected experts and submits confirmed versions', as
         activated: true,
       }
     if (path === '/auth/socket-ticket') data = { ticket: 'fixture', expiresInSeconds: 30 }
-    if (path === '/skills') data = skills
+    if (path === '/skills') data = { items: skills, total: skills.length, page: 1, size: 20 }
+    if (path === '/skills/options' || path === '/skills/selected') data = skills
     if (path === '/skills/imports/files') {
       const skill = skills[files++]!
       data = {
@@ -102,7 +103,11 @@ test('batch update previews affected experts and submits confirmed versions', as
   await page.goto('/skills')
   await page.getByRole('button', { name: '批量更新', exact: true }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.getByLabel('选择多个 Skill ZIP').setInputFiles(
+  const chooserPromise = page.waitForEvent('filechooser')
+  await dialog.getByRole('button', { name: '选择多个 Skill ZIP', exact: true }).click()
+  const chooser = await chooserPromise
+  expect(chooser.isMultiple()).toBe(true)
+  await chooser.setFiles(
     skills.map((skill) => ({
       name: `${skill.skillName}.zip`,
       mimeType: 'application/zip',
@@ -110,8 +115,27 @@ test('batch update previews affected experts and submits confirmed versions', as
     })),
   )
   await expect(dialog.getByText('上传完成，请配置并预览')).toHaveCount(2)
+  await expect(dialog.getByText('已添加 2 个文件', { exact: true })).toBeVisible()
+  const replacementPromise = page.waitForEvent('filechooser')
+  await dialog.getByRole('button', { name: '替换 code-review.zip', exact: true }).click()
+  const replacement = await replacementPromise
+  expect(replacement.isMultiple()).toBe(false)
+  await replacement.setFiles([])
+  await expect(dialog.getByText('已添加 2 个文件', { exact: true })).toBeVisible()
+  await expect(dialog).not.toContainText('未填写时保留原标签；应用空标签将清空全部行的标签。')
+  const versionBox = await dialog.getByPlaceholder('例如 1.1.0').boundingBox()
+  const tagBox = await dialog.getByRole('textbox', { name: '统一标签', exact: true }).boundingBox()
+  expect(Math.abs(versionBox!.y - tagBox!.y)).toBeLessThan(2)
   await dialog.getByPlaceholder('例如 1.1.0').fill('2.0')
-  await dialog.getByRole('button', { name: '应用到全部' }).click()
+  await dialog.getByRole('button', { name: '将版本号应用到全部' }).click()
+  await dialog.getByRole('textbox', { name: '统一标签', exact: true }).fill('研发推荐')
+  await dialog.getByRole('button', { name: '将标签应用到全部' }).click()
+  await expect(
+    dialog.getByRole('textbox', { name: 'code-review.zip 标签', exact: true }),
+  ).toHaveValue('研发推荐')
+  await expect(dialog.getByRole('textbox', { name: 'research.zip 标签', exact: true })).toHaveValue(
+    '研发推荐',
+  )
   await dialog.getByRole('button', { name: '校验预览' }).click()
   await expect(dialog).toContainText('受影响专家共 1 个')
   await dialog.getByText('查看 code-review 的受影响专家').click()

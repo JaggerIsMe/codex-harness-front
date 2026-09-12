@@ -26,28 +26,22 @@
           maxlength="30000"
           placeholder="描述专家职责、工作方式和输出要求"
       /></label>
-      <fieldset class="rounded-lg border p-4">
-        <legend class="px-2 font-medium">Skills（绑定固定版本）</legend>
-        <p v-if="loading" role="status">正在加载 Skills…</p>
-        <p v-else-if="!options.length" class="text-sm text-muted-foreground">
-          暂无可用 Skills，可先创建不依赖 Skills 的专家。
-        </p>
-        <label v-for="option in options" :key="option.id" class="flex items-center gap-2 py-1">
-          <input v-model="form.skillVersionIds" type="checkbox" :value="option.id" />{{
-            option.label
-          }}
-        </label>
-      </fieldset>
-      <fieldset class="rounded-lg border p-4">
-        <legend class="px-2 font-medium">MCP（绑定固定配置版本）</legend>
-        <p v-if="loading" role="status">正在加载 MCP 配置…</p>
-        <p v-else-if="!mcpOptions.length" class="text-sm text-muted-foreground">
-          暂无可用 MCP 配置，可在“MCP管理”中创建。
-        </p>
-        <label v-for="option in mcpOptions" :key="option.id" class="flex items-center gap-2 py-1">
-          <input v-model="form.mcpBindings" type="checkbox" :value="option.id" />{{ option.label }}
-        </label>
-      </fieldset>
+      <ExpertBindingField
+        v-model="form.skillVersionIds"
+        title="Skills（绑定固定版本）"
+        kind="Skills"
+        :options="options"
+        :loading="loading"
+        :disabled="saving"
+      />
+      <ExpertBindingField
+        v-model="form.mcpBindings"
+        title="MCP（绑定固定配置版本）"
+        kind="MCP"
+        :options="mcpOptions"
+        :loading="loading"
+        :disabled="saving"
+      />
       <fieldset disabled class="rounded-lg border border-dashed p-4 text-muted-foreground">
         <legend class="px-2">知识库</legend>
         <p class="text-sm">暂未接入，后续拓展</p>
@@ -56,7 +50,9 @@
     </form>
     <template #footer
       ><AppButton :disabled="saving" @click="close">取消</AppButton
-      ><AppButton tone="primary" :loading="saving" @click="save">保存草稿</AppButton></template
+      ><AppButton tone="primary" :loading="saving" :disabled="loading" @click="save"
+        >保存草稿</AppButton
+      ></template
     >
   </AppDialog>
 </template>
@@ -65,10 +61,11 @@ import { ref, reactive, watch } from 'vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AppInput from '@/components/common/AppInput.vue'
-import { getSkills } from '@/api/skill'
+import ExpertBindingField from '@/components/expert/ExpertBindingField.vue'
+import { getSkillOptions } from '@/api/skill'
 import { saveExpert } from '@/api/expert'
 import { listSelectableMcpVersions } from '@/api/mcp'
-import type { Expert, ExpertDraft } from '@/types/expert'
+import type { Expert, ExpertDraft, ExpertBindingOption } from '@/types/expert'
 const props = defineProps<{ modelValue: boolean; expert: Expert | null }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [] }>()
 const form = reactive<ExpertDraft>({
@@ -79,8 +76,8 @@ const form = reactive<ExpertDraft>({
   mcpBindings: [],
   knowledgeBindings: [],
 })
-const options = ref<{ id: number; label: string }[]>([])
-const mcpOptions = ref<{ id: number; label: string }[]>([])
+const options = ref<ExpertBindingOption[]>([])
+const mcpOptions = ref<ExpertBindingOption[]>([])
 const loading = ref(false),
   saving = ref(false),
   error = ref('')
@@ -105,10 +102,12 @@ watch(
       revision: value?.revision,
     })
     error.value = ''
+    options.value = []
+    mcpOptions.value = []
     loading.value = true
     try {
       const [result, mcpResult] = await Promise.all([
-        getSkills({ status: 'ENABLED' }, controller.signal),
+        getSkillOptions({ status: 'ENABLED' }, controller.signal),
         listSelectableMcpVersions(controller.signal),
       ])
       if (active) {
@@ -120,11 +119,19 @@ watch(
             for (const version of skill.versions) selected.delete(version.id)
             selected.add(latest.id)
           }
-          return [{ id: latest.id, label: `${skill.skillName} · ${latest.version}` }]
+          return [
+            { id: latest.id, label: `${skill.skillName} · ${latest.version}`, tag: skill.tag },
+          ]
         })
-        form.skillVersionIds = options.value
-          .filter((option) => selected.has(option.id))
-          .map((option) => option.id)
+        form.skillVersionIds = [...selected]
+        for (const id of selected) {
+          if (!options.value.some((option) => option.id === id))
+            options.value.push({
+              id,
+              label: `不可用 Skill 版本 #${id}（保存前需移除）`,
+              unavailable: true,
+            })
+        }
         const selectedMcp = new Set(form.mcpBindings)
         for (const option of mcpResult.data) {
           if (option.previousVersionIds?.some((id) => selectedMcp.has(id))) {
@@ -139,7 +146,11 @@ watch(
         }))
         for (const id of selectedMcp) {
           if (!mcpOptions.value.some((option) => option.id === id))
-            mcpOptions.value.push({ id, label: `不可用 MCP 配置版本 #${id}（保存前需取消）` })
+            mcpOptions.value.push({
+              id,
+              label: `不可用 MCP 配置版本 #${id}（保存前需移除）`,
+              unavailable: true,
+            })
         }
       }
     } catch (cause) {
@@ -153,7 +164,7 @@ function close() {
   if (!saving.value) emit('update:modelValue', false)
 }
 async function save() {
-  if (saving.value) return
+  if (saving.value || loading.value) return
   if (!form.name.trim() || !form.systemPrompt.trim()) {
     error.value = '请填写名称和系统提示词'
     return

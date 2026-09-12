@@ -14,6 +14,13 @@
           ><AppInput v-model="form.description" type="textarea" :rows="3" maxlength="1000"
         /></FormField>
       </template>
+      <FormField v-if="!skill" label="标签" prop="tag"
+        ><AppInput
+          v-model="form.tag"
+          label="标签"
+          maxlength="200"
+          placeholder="选填，例如：代码审查、团队常用"
+      /></FormField>
       <FormField label="版本号" prop="version"
         ><AppInput v-model="form.version" maxlength="64" placeholder="例如 1.0.0"
       /></FormField>
@@ -58,9 +65,10 @@ const submitting = ref(false)
 const form = reactive<{
   skillName: string
   description: string
+  tag: string
   version: string
   file: File | null
-}>({ skillName: '', description: '', version: '', file: null })
+}>({ skillName: '', description: '', tag: '', version: '', file: null })
 const segmentPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const rules = computed<FormRules>(() => ({
   skillName: props.skill
@@ -89,7 +97,8 @@ const rules = computed<FormRules>(() => ({
 watch(
   () => props.modelValue,
   (visible) => {
-    if (visible) Object.assign(form, { skillName: '', description: '', version: '', file: null })
+    if (visible)
+      Object.assign(form, { skillName: '', description: '', tag: '', version: '', file: null })
   },
 )
 function selectFile(event: Event) {
@@ -112,6 +121,7 @@ async function submit() {
     else {
       data.append('skillName', form.skillName.trim())
       data.append('description', form.description.trim())
+      data.append('tag', form.tag.trim())
       response = await createSkill(data)
     }
     emit('uploaded', response.data)

@@ -1375,7 +1375,8 @@ async function fixtures(page: Page, authenticated = true) {
           },
         ],
       }
-    else if (path === '/skills') data = [skill]
+    else if (path === '/skills') data = { items: [skill], total: 1, page: 1, size: 20 }
+    else if (path === '/skills/options' || path === '/skills/selected') data = [skill]
     else if (path === '/skill-expert-assignments') data = []
     await route.fulfill({ json: { status: 'success', code: 200, info: '请求成功', data } })
   })

@@ -75,6 +75,7 @@ it('publishes a new Skill Version without requesting a hidden Skill name', async
   expect(data.get('version')).toBe('1.1.0')
   expect(data.get('file')).toBe(file)
   expect(data.has('skillName')).toBe(false)
+  expect(data.has('tag')).toBe(false)
   expect(createSkill).not.toHaveBeenCalled()
   expect(wrapper.emitted('uploaded')).toHaveLength(1)
   expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
@@ -102,11 +103,13 @@ it('still requires a valid name when reopening to create a Skill', async () => {
 
   await wrapper.get('input[placeholder="例如 code-review"]').setValue('code-review')
   await wrapper.get('textarea').setValue('Review changes')
+  await wrapper.get('input[aria-label="标签"]').setValue('  团队常用  ')
   await submit()
   expect(createSkill).toHaveBeenCalledOnce()
   const data = vi.mocked(createSkill).mock.calls[0]![0]
   expect(data.get('skillName')).toBe('code-review')
   expect(data.get('description')).toBe('Review changes')
+  expect(data.get('tag')).toBe('团队常用')
   expect(uploadSkillVersion).not.toHaveBeenCalled()
 })
 

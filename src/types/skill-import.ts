@@ -15,6 +15,7 @@ export interface SkillImportInput {
   skillId: number | null
   skillName: string
   description: string
+  tag?: string
   version: string
 }
 export interface SkillImportImpact {

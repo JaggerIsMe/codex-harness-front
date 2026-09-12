@@ -150,6 +150,7 @@ export interface Skill {
   id: number
   skillName: string
   description: string
+  tag?: string
   status: string
   versionCount: number
   createdAt: string
@@ -217,6 +218,7 @@ export interface TurnInput {
 export interface SkillInput {
   skillName: string
   description: string
+  tag?: string
   status: string
 }
 export interface SearchParams {
