@@ -181,12 +181,19 @@ export const useConversationStore = defineStore('conversation', () => {
   const canStartTurn = computed(
     () =>
       currentConversation.value?.status === 'ACTIVE' &&
+      !currentConversation.value.orchestrationManaged &&
       Boolean(currentConversation.value.codexThreadId) &&
       !isTurnActive.value,
   )
 
   function upsertConversation(value: Conversation | null) {
     if (!value || isRemoved(value)) return
+    if (value.orchestrationManaged) {
+      conversations.value = conversations.value.filter(
+        (item) => String(item.id) !== String(value.id),
+      )
+      return
+    }
     conversations.value = [
       value,
       ...conversations.value.filter((item) => String(item.id) !== String(value.id)),

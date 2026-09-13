@@ -53,6 +53,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   let stopListening: (() => void) | null = null
   const removedProjects = new Set<string>()
   const removedConversations = new Set<string>()
+  const managedConversations = new Set<string>()
   const renamedProjects = new Map<string, { name: string; revision: number }>()
   const renamedConversations = new Map<string, { title: string; revision: number }>()
 
@@ -60,6 +61,22 @@ export const useNavigationStore = defineStore('navigation', () => {
     return (
       removedProjects.has(String(value.projectId)) || removedConversations.has(String(value.id))
     )
+  }
+  function hideManaged(value: Conversation) {
+    const id = String(value.id),
+      key = String(value.projectId)
+    if (!value.orchestrationManaged && !managedConversations.has(id)) return false
+    managedConversations.add(id)
+    if (conversations.value[key])
+      conversations.value[key] = conversations.value[key]!.filter(
+        (item) => !sameId(item.id, value.id),
+      )
+    delete activities.value[id]
+    pendingIssues.delete(id)
+    queryResultIds.get(key)?.delete(id)
+    pendingUpdates.get(key)?.delete(value.id)
+    pendingStatusIds.get(key)?.delete(value.id)
+    return true
   }
   function retainNames(value: Conversation, before: number) {
     const project = renamedProjects.get(String(value.projectId))
@@ -73,6 +90,7 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   function acceptSnapshot(value: Conversation, before = revision) {
     if (isRemoved(value)) return
+    if (hideManaged(value)) return
     value = retainNames(value, before)
     const previous = activities.value[value.id]
     if (previous && previous.revision > before) return
@@ -235,6 +253,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   }
 
   function matchesKeyword(value: Conversation) {
+    if (value.orchestrationManaged || managedConversations.has(String(value.id))) return false
     const query = keyword.value.toLocaleLowerCase()
     if (!query || queryResultIds.get(String(value.projectId))?.has(String(value.id))) return true
     const project = useProjectStore().projects.find((item) => sameId(item.id, value.projectId))
@@ -371,6 +390,7 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   function upsert(value: Conversation, options: { promote?: boolean } = {}) {
     if (isRemoved(value)) return
+    if (hideManaged(value)) return
     acceptSnapshot(value)
     if (options.promote !== false) useProjectStore().promoteProject(value.projectId)
     const key = String(value.projectId)
@@ -532,6 +552,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   }
 
   function scheduleRefresh(projectId: Id, conversationId?: Id) {
+    if (conversationId != null && managedConversations.has(String(conversationId))) return
     const key = String(projectId)
     if (
       removedProjects.has(key) ||
@@ -725,6 +746,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     receiptOwner = null
     removedProjects.clear()
     removedConversations.clear()
+    managedConversations.clear()
     renamedProjects.clear()
     renamedConversations.clear()
     revision += 1

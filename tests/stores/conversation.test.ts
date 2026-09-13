@@ -50,6 +50,20 @@ const conversation: Conversation = {
   codexThreadId: 'thread',
 }
 
+it('keeps a managed step opened through an old URL read only even after its Turn completes', async () => {
+  vi.mocked(api.getConversation).mockResolvedValue(
+    result({ ...conversation, orchestrationManaged: true }),
+  )
+  vi.mocked(api.getActiveTurn).mockResolvedValue(result(null))
+  const store = useConversationStore()
+  await store.openConversation(3, 4)
+  expect(store.currentConversation?.orchestrationManaged).toBe(true)
+  expect(store.canStartTurn).toBe(false)
+  await store.startNewTurn({ message: 'extra message', clientRequestId: 'manual-message' })
+  expect(api.startTurn).not.toHaveBeenCalled()
+  expect(store.conversations).toEqual([])
+})
+
 function snapshot(messages: Message[] = [], overrides: Partial<MessageState> = {}) {
   return result<MessageState>({
     messages,

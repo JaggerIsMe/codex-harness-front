@@ -118,6 +118,7 @@ export interface Project {
   lastActivityAt?: string | null
 }
 export interface Conversation {
+  orchestrationManaged?: boolean
   id: number
   deviceId: number
   workspaceId: number

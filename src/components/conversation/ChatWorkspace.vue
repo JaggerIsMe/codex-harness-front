@@ -195,10 +195,14 @@
               </div>
 
               <ConversationComposer
+                v-if="!currentConversation.orchestrationManaged"
                 :key="`${currentConversation.projectId}:${currentConversation.id}`"
                 :project-id="currentConversation.projectId"
                 :conversation-id="currentConversation.id"
               />
+              <p v-else class="p-4 text-sm text-muted-foreground">
+                编排步骤会话仅供查看，不允许直接发送消息。请在多 Expert 编排页面管理执行。
+              </p>
             </div>
           </div>
         </template>
@@ -209,6 +213,12 @@
             <p>新建一个会话，开始与 Agent 一起工作。</p>
             <div class="flex flex-wrap items-center justify-center gap-2">
               <AppButton :icon="Plus" tone="primary" @click="emit('create')">新建会话</AppButton>
+              <RouterLink
+                v-if="project"
+                :to="{ name: 'project-orchestrations', params: { projectId: project.id } }"
+                :class="buttonVariants({ variant: 'outline' })"
+                >多 Expert 编排</RouterLink
+              >
               <ProjectActions v-if="project" :key="project.id" :project="project" />
             </div>
             <RouterLink
@@ -258,6 +268,8 @@ import type { Approval, ApprovalAnswers, Decision, DisplayMessage, Project } fro
 import EmptyState from '@/components/common/EmptyState.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import { buttonVariants } from '@/components/ui/button'
+import { RouterLink } from 'vue-router'
 import { computed, ref } from 'vue'
 import { useNow, useResizeObserver } from '@vueuse/core'
 import { storeToRefs } from 'pinia'

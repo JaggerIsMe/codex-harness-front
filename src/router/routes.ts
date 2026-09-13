@@ -50,6 +50,18 @@ const routes = [
         meta: { title: '专家管理', permission: 'expert:manage' },
       },
       {
+        path: 'projects/:projectId/orchestrations',
+        name: 'project-orchestrations',
+        component: () => import('../views/orchestration/OrchestrationList.vue'),
+        meta: { title: '多 Expert 编排', permission: 'conversation:read' },
+      },
+      {
+        path: 'projects/:projectId/orchestrations/new',
+        name: 'project-workflow-editor',
+        component: () => import('../views/orchestration/WorkflowEditor.vue'),
+        meta: { title: '工作流画布', permission: 'conversation:create' },
+      },
+      {
         path: 'projects/:projectId/experts',
         name: 'project-experts',
         component: () => import('../views/expert/ProjectExperts.vue'),

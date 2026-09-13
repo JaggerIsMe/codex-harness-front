@@ -71,3 +71,34 @@ it('aborts sidebar requests on reset and ignores late responses from the previou
   expect(store.conversations).toEqual({})
   expect(store.loading).toEqual({})
 })
+
+it('hides managed steps and never reintroduces them from a stale ordinary list or upsert', async () => {
+  const store = useNavigationStore()
+  store.upsert(conversation)
+  const pending = Promise.withResolvers<ApiResponse<Conversation[]>>()
+  vi.mocked(getConversations).mockReturnValueOnce(pending.promise)
+  const loading = store.load(3)
+  store.upsert({ ...conversation, orchestrationManaged: true })
+  store.upsert(conversation)
+  pending.resolve(result([conversation, { ...conversation, id: 5 }]))
+  await loading
+  expect(store.conversations[3]?.map((item) => item.id)).toEqual([5])
+  store.reset()
+})
+
+it('excludes managed step cards on the first response after a complete page reload', async () => {
+  vi.mocked(getConversations).mockResolvedValue(
+    result([
+      { ...conversation, orchestrationManaged: true },
+      { ...conversation, id: 5, title: '普通会话', orchestrationManaged: false },
+    ]),
+  )
+  const store = useNavigationStore()
+  await store.load(3)
+  expect(store.conversations[3]?.map((item) => item.id)).toEqual([5])
+  store.reset()
+  await store.load(3)
+  expect(store.conversations[3]?.map((item) => item.id)).toEqual([5])
+  expect(getConversations).toHaveBeenCalledTimes(2)
+  store.reset()
+})

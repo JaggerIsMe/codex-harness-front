@@ -54,6 +54,26 @@ function turn(type: string, conversationId = 4, turnId = 8) {
   publish({ type, payload: { conversationId, turnId } })
 }
 
+it('removes managed steps during status reconciliation and ignores their subsequent stream events', async () => {
+  const store = useNavigationStore()
+  store.upsert(running)
+  store.upsert({ ...conversation, id: 5 })
+  store.startListening()
+  vi.mocked(getConversationStatuses).mockResolvedValue(
+    result([
+      { ...running, orchestrationManaged: true },
+      { ...conversation, id: 5 },
+    ]),
+  )
+  publish({ type: 'TURN_COMPLETED', payload: { projectId: 3, conversationId: 4, turnId: 8 } })
+  await vi.advanceTimersByTimeAsync(200)
+  expect(store.conversations[3]?.map((item) => item.id)).toEqual([5])
+  const count = vi.mocked(getConversationStatuses).mock.calls.length
+  publish({ type: 'MESSAGE_UPDATED', payload: { projectId: 3, conversationId: 4, turnId: 8 } })
+  await vi.advanceTimersByTimeAsync(400)
+  expect(getConversationStatuses).toHaveBeenCalledTimes(count)
+})
+
 it('restores running, completed, failed and incomplete results from one list request', async () => {
   const values = [
     conversation,

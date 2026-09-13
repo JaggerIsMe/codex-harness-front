@@ -1,0 +1,214 @@
+.workflow-canvas {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  &__viewport {
+    position: relative;
+    height: 580px;
+    max-height: 70vh;
+    min-height: 340px;
+    overflow: clip;
+    overscroll-behavior: contain;
+    touch-action: none;
+    user-select: none;
+    cursor: grab;
+    background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  }
+  &__surface {
+    position: relative;
+    transform-origin: top left;
+    will-change: transform;
+  }
+  &__edges {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    color: var(--muted-foreground);
+    overflow: visible;
+  }
+  &__edge-label {
+    fill: currentColor;
+    font-size: 12px;
+  }
+  &__edge-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 18px;
+    vector-effect: non-scaling-stroke;
+    pointer-events: stroke;
+    cursor: pointer;
+    outline: none;
+  }
+  &__edge--selected,
+  &__edge:has(&__edge-hit:hover),
+  &__edge:has(&__edge-hit:focus-visible) {
+    color: var(--primary);
+    .workflow-canvas__edge-line {
+      stroke-width: 3px;
+    }
+  }
+  &__disconnect {
+    position: absolute;
+    z-index: 2;
+    transform: translate(-50%, -50%);
+    padding: 6px 10px;
+    border: 1px solid var(--destructive);
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--destructive);
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: 0 2px 8px #0002;
+    &:hover {
+      background: var(--muted);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 2px;
+    }
+  }
+  &__empty {
+    position: absolute;
+    left: 40px;
+    top: 80px;
+    color: var(--muted-foreground);
+  }
+  &__node {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 224px;
+    height: 200px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 3px 8px #0000000c;
+  }
+  &__node--selected {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+  &__node--branch {
+    border-style: dashed;
+  }
+  &__node--start {
+    border-color: var(--primary);
+    border-radius: 24px;
+  }
+  &__node--skipped {
+    opacity: 0.55;
+  }
+  &__node--target {
+    outline: 3px solid var(--primary);
+    outline-offset: 4px;
+  }
+  &__node--invalid {
+    outline: 2px solid var(--destructive);
+    outline-offset: 4px;
+  }
+  &__reconnect {
+    pointer-events: all;
+    cursor: crosshair;
+    fill: var(--card);
+    stroke: var(--primary);
+    stroke-width: 2px;
+  }
+  &__reconnect:hover,
+  &__reconnect:focus-visible {
+    fill: var(--primary);
+    outline: none;
+    stroke-width: 4px;
+  }
+  &__connection-preview {
+    stroke: var(--primary);
+    stroke-width: 3px;
+    stroke-dasharray: 7 5;
+    pointer-events: none;
+  }
+  &--panning &__viewport,
+  &--panning &__heading,
+  &--dragging &__heading {
+    cursor: grabbing;
+  }
+  &--connecting &__viewport,
+  &--connecting &__heading,
+  &--connecting &__input,
+  &__port {
+    cursor: crosshair;
+  }
+  &--space &__viewport,
+  &--space &__heading {
+    cursor: grab;
+  }
+  &--dragging &__node--selected {
+    will-change: transform;
+  }
+  &__heading {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 12px;
+    cursor: grab;
+    touch-action: none;
+  }
+  &__heading:focus-visible,
+  &__input:focus-visible,
+  &__port:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  &__description {
+    margin: 0 12px 6px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
+  }
+  &__input {
+    position: absolute;
+    left: -10px;
+    top: 18px;
+    color: var(--primary);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 100%;
+    width: 24px;
+    height: 24px;
+  }
+  &__port {
+    position: absolute;
+    right: -8px;
+    height: 24px;
+    padding: 0 4px 0 8px;
+    font-size: 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--primary);
+  }
+  &__port--next {
+    top: 138px;
+  }
+  &__port--true {
+    top: 113px;
+  }
+  &__port--false {
+    top: 153px;
+  }
+}

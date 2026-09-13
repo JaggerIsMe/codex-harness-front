@@ -10,6 +10,7 @@ import { getConversations } from '@/api/conversation'
 import type { ApiResponse, Project } from '@/types/domain'
 
 vi.mock('vue-router', () => ({
+  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
   useRoute: () => ({ params: { projectId: '9' }, query: {} }),
   useRouter: () => ({ push: vi.fn() }),
 }))
