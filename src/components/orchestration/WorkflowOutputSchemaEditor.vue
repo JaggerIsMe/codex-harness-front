@@ -14,17 +14,16 @@
     <template v-if="modelValue">
       <div class="flex gap-2">
         <AppButton :aria-pressed="!raw" @click="raw = false">可视化字段</AppButton
-        ><AppButton :aria-pressed="raw" @click="raw = true">JSON 编辑</AppButton
+        ><AppButton :aria-pressed="raw" @click="raw = true">查看 JSON</AppButton
         ><AppButton @click="emit('insert', '{{outputSchema}}')">插入输出 Schema</AppButton>
       </div>
       <AppInput
         v-if="raw"
-        v-model="text"
+        :model-value="text"
         label="输出 Schema JSON"
         type="textarea"
         :rows="14"
-        maxlength="16000"
-        @update:model-value="parse"
+        readonly
       />
       <WorkflowSchemaNode
         v-else
@@ -33,6 +32,9 @@
         :depth="0"
         @update:model-value="emit('update:modelValue', $event)"
       />
+      <p v-if="raw" class="text-xs text-muted-foreground">
+        JSON 仅供查看和复制，请在“可视化字段”中修改。
+      </p>
       <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
       <p class="text-xs text-muted-foreground">
         支持
@@ -43,7 +45,7 @@
   </section>
 </template>
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { WorkflowOutputSchema } from '@/types/orchestration'
 import { schemaError, defaultOutputSchema } from '@/utils/workflowData'
 import WorkflowSchemaNode from './WorkflowSchemaNode.vue'
@@ -55,32 +57,11 @@ const emit = defineEmits<{
   insert: [string]
   valid: [boolean]
 }>()
-const raw = ref(false),
-  text = ref(''),
-  error = ref('')
-watch(
-  () => props.modelValue,
-  (schema) => {
-    if (!error.value) text.value = JSON.stringify(schema, null, 2)
-  },
-  { immediate: true, deep: true },
-)
-function parse(value: string) {
-  try {
-    const schema: unknown = JSON.parse(value)
-    if (schema === null) throw new Error('启用时 Schema 不能为 null')
-    const issue = schemaError(schema)
-    if (issue) throw new Error(issue)
-    error.value = ''
-    emit('update:modelValue', schema as WorkflowOutputSchema)
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Schema 无效'
-  }
-  emit('valid', !error.value)
-}
+const raw = ref(false)
+const text = computed(() => JSON.stringify(props.modelValue, null, 2))
+const error = computed(() => schemaError(props.modelValue))
+watch(error, (message) => emit('valid', !message), { immediate: true })
 function toggle(on: boolean) {
-  error.value = ''
-  emit('valid', true)
   emit('update:modelValue', on ? defaultOutputSchema() : null)
 }
 </script>

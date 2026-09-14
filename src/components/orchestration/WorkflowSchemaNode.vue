@@ -87,7 +87,7 @@
       />
     </div>
     <p v-if="modelValue.enum" class="break-all text-xs text-muted-foreground">
-      允许值：{{ JSON.stringify(modelValue.enum) }}（可在 JSON 编辑中调整）
+      允许值：{{ JSON.stringify(modelValue.enum) }}
     </p>
   </div>
 </template>

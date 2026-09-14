@@ -5,7 +5,7 @@
         <h1 class="text-2xl font-semibold">工作流画布</h1>
         <p class="text-sm text-muted-foreground">自定义 Expert、职责和条件路径，按连线串行执行。</p>
       </div>
-      <div class="flex flex-wrap gap-2">
+      <div v-if="!canvasFullscreen" class="flex flex-wrap gap-2">
         <RouterLink
           :to="{ name: 'project-orchestrations', params: { projectId } }"
           :class="buttonVariants({ variant: 'outline' })"
@@ -41,38 +41,45 @@
             placeholder="填写此次工作流的目标"
         /></FormField>
       </div>
-      <div class="flex flex-wrap gap-2">
+    </fieldset>
+    <WorkflowWorkspace
+      v-model="workflow"
+      :selected-id="selectedId"
+      :disabled="loading || submitting || !enabled"
+      @select="selectedId = $event"
+      @fullscreen-change="canvasFullscreen = $event"
+    >
+      <template #actions="{ fullscreen }">
         <AppButton :disabled="workflow.nodes.length >= 41" @click="add('EXPERT')"
           >添加 Expert 节点</AppButton
         ><AppButton :disabled="workflow.nodes.length >= 41" @click="add('BRANCH')"
           >添加条件节点</AppButton
         ><AppButton :disabled="workflow.nodes.length >= 41" @click="add('END')"
           >添加结束节点</AppButton
-        ><span class="self-center text-xs text-muted-foreground"
+        ><AppButton v-if="fullscreen" @click="saveDraft">保存草稿</AppButton>
+        <span class="self-center text-xs text-muted-foreground"
           >{{ workflow.nodes.length - 1 }}/40 个流程节点 · 默认 1 个开始节点 · 最后一个 Expert
           不连接出口即结束</span
         >
-      </div>
-      <div class="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <WorkflowCanvas
-          v-model="workflow"
-          :selected-id="selectedId"
-          @select="selectedId = $event"
-        />
+      </template>
+      <template #status>
+        <p v-if="error" role="alert" class="whitespace-pre-line text-sm text-destructive">
+          {{ error }}
+        </p>
+        <p v-if="notice" role="status" class="text-sm text-muted-foreground">{{ notice }}</p>
+      </template>
+      <template v-if="selected" #inspector>
         <WorkflowNodeInspector
-          v-if="selected"
           :node="selected"
           :workflow="workflow"
           :experts="experts"
           :project-id="projectId"
           @change="update"
           @remove="remove"
+          @close="selectedId = ''"
         />
-        <aside v-else class="rounded-xl border p-5 text-sm text-muted-foreground">
-          添加或选择一个节点，配置它的 Expert、职责或判断条件。使用节点出口和入口连接流程。
-        </aside>
-      </div>
-    </fieldset>
+      </template>
+    </WorkflowWorkspace>
   </div>
 </template>
 <script setup lang="ts">
@@ -88,13 +95,14 @@ import AppButton from '@/components/common/AppButton.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import FormField from '@/components/common/FormField.vue'
 import { buttonVariants } from '@/components/ui/button'
-import WorkflowCanvas from '@/components/orchestration/WorkflowCanvas.vue'
+import WorkflowWorkspace from '@/components/orchestration/WorkflowWorkspace.vue'
 import WorkflowNodeInspector from '@/components/orchestration/WorkflowNodeInspector.vue'
 const route = useRoute(),
   router = useRouter(),
   auth = useAuthStore()
 const projectId = computed(() => Number(route.params.projectId))
 const workflow = ref<Workflow>(createWorkflow())
+const canvasFullscreen = ref(false)
 const selectedId = ref(''),
   title = ref(''),
   goal = ref(''),

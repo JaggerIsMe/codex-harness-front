@@ -135,12 +135,34 @@ test('configure typed workflow inputs schemas and file references', async ({ pag
   await dialog.getByRole('button', { name: '输出 Schema', exact: true }).click()
   await dialog.getByLabel('启用输出 Schema 校验').check()
   await dialog.getByRole('button', { name: '插入输出 Schema', exact: true }).click()
-  await dialog.getByRole('button', { name: 'JSON 编辑', exact: true }).click()
-  await dialog
-    .getByLabel('输出 Schema JSON', { exact: true })
-    .fill(
-      '{"type":"object","properties":{"approved":{"type":"boolean"},"summary":{"type":"string"}},"required":["approved","summary"],"additionalProperties":false}',
-    )
+  await dialog.getByLabel('输出 类型', { exact: true }).selectOption('string')
+  await dialog.getByLabel('输出 类型', { exact: true }).selectOption('object')
+  await dialog.getByLabel('输出 新字段名', { exact: true }).fill('approved')
+  await dialog.getByRole('button', { name: '添加字段', exact: true }).click()
+  await dialog.getByLabel('输出/approved 类型', { exact: true }).selectOption('boolean')
+  await dialog.getByLabel('输出/approved 必填', { exact: true }).check()
+  await dialog.getByLabel('输出 新字段名', { exact: true }).fill('summary')
+  await dialog.getByRole('button', { name: '添加字段', exact: true }).click()
+  await dialog.getByLabel('输出/summary 必填', { exact: true }).check()
+  await dialog.getByRole('button', { name: '查看 JSON', exact: true }).click()
+  const schemaJson = dialog.getByLabel('输出 Schema JSON', { exact: true })
+  const schemaText = await schemaJson.inputValue()
+  await expect(schemaJson).toHaveAttribute('readonly')
+  await schemaJson.focus()
+  await page.keyboard.press('Control+A')
+  await page.keyboard.press('Backspace')
+  await expect(schemaJson).toHaveValue(schemaText)
+  await dialog.getByRole('button', { name: '可视化字段', exact: true }).click()
+  await dialog.getByLabel('输出/summary 说明', { exact: true }).fill('检查摘要')
+  await dialog.getByRole('button', { name: '查看 JSON', exact: true }).click()
+  expect(JSON.parse(await schemaJson.inputValue())).toMatchObject({
+    properties: {
+      approved: { type: 'boolean' },
+      summary: { type: 'string', description: '检查摘要' },
+    },
+    required: ['approved', 'summary'],
+  })
+  await expect(dialog.getByRole('button', { name: '应用输入输出配置', exact: true })).toBeEnabled()
   await page.screenshot({ path: testInfo.outputPath('workflow-output-schema.png'), fullPage: true })
   await dialog.getByRole('button', { name: '输入输出文件', exact: true }).click()
   await dialog.getByRole('button', { name: '添加输入文件', exact: true }).click()

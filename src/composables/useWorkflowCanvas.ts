@@ -19,6 +19,7 @@ export function useWorkflowCanvas(
   viewport: Ref<HTMLElement | null>,
   update: (graph: Workflow) => void,
   select: (id: string) => void,
+  coveredArea: () => { right: number; bottom: number } = () => ({ right: 0, bottom: 0 }),
 ) {
   const view = shallowRef({ x: 0, y: 0, zoom: 1 })
   const preview = shallowRef<({ id: string } & Point) | null>(null)
@@ -290,11 +291,13 @@ export function useWorkflowCanvas(
     const width = Math.max(...nodes.map((n) => n.x + 264)) - left,
       height = Math.max(...nodes.map((n) => n.y + 240)) - top
     const rect = viewport.value.getBoundingClientRect(),
-      zoom = Math.max(0.2, Math.min(1, rect.width / width, rect.height / height))
+      availableWidth = Math.max(1, rect.width - coveredArea().right),
+      availableHeight = Math.max(1, rect.height - coveredArea().bottom),
+      zoom = Math.max(0.2, Math.min(1, availableWidth / width, availableHeight / height))
     view.value = {
       zoom,
-      x: (rect.width - width * zoom) / 2 - left * zoom,
-      y: (rect.height - height * zoom) / 2 - top * zoom,
+      x: (availableWidth - width * zoom) / 2 - left * zoom,
+      y: (availableHeight - height * zoom) / 2 - top * zoom,
     }
   }
   function keydown(event: KeyboardEvent) {
@@ -326,15 +329,17 @@ export function useWorkflowCanvas(
     const node = graph().nodes.find((n) => n.id === element?.dataset.nodeId)
     if (!node) return
     const rect = viewport.value.getBoundingClientRect(),
+      availableWidth = rect.width - coveredArea().right,
+      availableHeight = rect.height - coveredArea().bottom,
       zoom = view.value.zoom
     const left = node.x * zoom + view.value.x,
       top = node.y * zoom + view.value.y
     let dx = 0,
       dy = 0
     if (left < 20) dx = 20 - left
-    else if (left + 244 * zoom > rect.width) dx = rect.width - left - 244 * zoom
+    else if (left + 244 * zoom > availableWidth) dx = availableWidth - left - 244 * zoom
     if (top < 20) dy = 20 - top
-    else if (top + 220 * zoom > rect.height) dy = rect.height - top - 220 * zoom
+    else if (top + 220 * zoom > availableHeight) dy = availableHeight - top - 220 * zoom
     if (dx || dy) view.value = { ...view.value, x: view.value.x + dx, y: view.value.y + dy }
   }
   watch([graph, readonly], () => {

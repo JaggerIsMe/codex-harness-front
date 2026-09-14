@@ -18,6 +18,48 @@ const mountDialog = () =>
     props: { node: node(), upstream: [], projectId: 2 },
     global: { stubs: { AppDialog: { template: '<div><slot/><slot name="footer"/></div>' } } },
   })
+it('keeps JSON inspection read-only and applies subsequent visual schema changes', async () => {
+  const wrapper = mountDialog()
+  const schema = wrapper.get('[aria-label="输出 Schema 配置"]')
+  const click = async (label: string) => {
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === label)!
+      .trigger('click')
+  }
+  await schema.get('input[type="checkbox"]').setValue(true)
+  await schema.get('[aria-label="输出 类型"]').setValue('string')
+  await schema.get('[aria-label="输出 类型"]').setValue('object')
+  await click('查看 JSON')
+  const json = schema.get<HTMLTextAreaElement>('[aria-label="输出 Schema JSON"]')
+  expect(json.element.readOnly).toBe(true)
+  await click('可视化字段')
+  await schema.get('[aria-label="输出 新字段名"]').setValue('approved')
+  await click('添加字段')
+  await schema.get('[aria-label="输出/approved 类型"]').setValue('boolean')
+  await schema.get('[aria-label="输出/approved 必填"]').setValue(true)
+  expect(schema.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+  await click('查看 JSON')
+  const preview = schema.get<HTMLTextAreaElement>('[aria-label="输出 Schema JSON"]')
+  expect(preview.element.readOnly).toBe(true)
+  expect(JSON.parse(preview.element.value)).toMatchObject({
+    properties: { approved: { type: 'boolean' } },
+    required: ['approved'],
+  })
+  await click('应用输入输出配置')
+  expect((wrapper.emitted('apply')![0]![0] as WorkflowNode).outputSchema).toEqual(
+    JSON.parse(preview.element.value),
+  )
+  expect(wrapper.props('node').outputSchema).toBeUndefined()
+  await schema.get('input[type="checkbox"]').setValue(false)
+  await schema.get('input[type="checkbox"]').setValue(true)
+  expect(
+    JSON.parse(schema.get<HTMLTextAreaElement>('[aria-label="输出 Schema JSON"]').element.value),
+  ).toMatchObject({
+    properties: { approved: { type: 'boolean' }, summary: { type: 'string' } },
+  })
+  wrapper.unmount()
+})
 it('keeps changes local until Apply and does not implicitly change user instructions', async () => {
   const wrapper = mountDialog()
   await wrapper.get('[aria-label="输入字段映射配置"] button').trigger('click')

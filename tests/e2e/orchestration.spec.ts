@@ -158,6 +158,19 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
   await expect(page.getByRole('button', { name: '开始 入口', exact: true })).toHaveCount(0)
   await page.getByLabel('编排名称', { exact: true }).fill('订单查询协作')
   await page.getByLabel('工作流目标', { exact: true }).fill('按要求检查订单查询')
+  const normalCanvas = await page.getByLabel('工作流画布', { exact: true }).boundingBox()
+  const initialTransform = await page.locator('.workflow-canvas__surface').getAttribute('style')
+  await page.getByRole('button', { name: '全屏编辑', exact: true }).click()
+  const workspace = page.getByRole('region', { name: '工作流编辑区', exact: true })
+  await expect(workspace).toHaveClass(/workflow-workspace--fullscreen/)
+  expect(await workspace.boundingBox()).toEqual({ x: 0, y: 0, width: 1600, height: 1100 })
+  expect(
+    (await page.getByLabel('工作流画布', { exact: true }).boundingBox())!.height,
+  ).toBeGreaterThan(normalCanvas!.height)
+  await expect(page.locator('.workflow-canvas__surface')).toHaveAttribute(
+    'style',
+    initialTransform!,
+  )
   const addExpert = async (name: string, message: string, expert = '8') => {
     await page.getByRole('button', { name: '添加 Expert 节点', exact: true }).click()
     await page.getByLabel('节点名称', { exact: true }).fill(name)
@@ -165,6 +178,21 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
     await page.getByLabel('职责与目标', { exact: true }).fill(message)
   }
   await addExpert('检查输入', '检查 。返回 JSON。')
+  const panel = page.getByRole('complementary', { name: '节点配置', exact: true })
+  const panelBox = (await panel.boundingBox())!
+  const fullCanvasBox = (await page.getByLabel('工作流画布', { exact: true }).boundingBox())!
+  expect(panelBox.x).toBeGreaterThan(fullCanvasBox.x)
+  expect(panelBox.x + panelBox.width).toBeLessThan(fullCanvasBox.x + fullCanvasBox.width)
+  await page.getByRole('button', { name: '配置输入 / 输出 / 文件', exact: true }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(workspace).toHaveClass(/workflow-workspace--fullscreen/)
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect(workspace.getByText('草稿已保存到当前浏览器。', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '退出全屏', exact: true }).click()
+  await expect(panel).toBeVisible()
+  await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue('检查输入')
   const objective = page.getByLabel('职责与目标', { exact: true })
   await objective.press('Control+Home')
   await objective.press('ArrowRight')
@@ -190,9 +218,9 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
     .getByRole('button', { name: '选择节点 检查输入', exact: true })
     .boundingBox()
   if (!canvasBox || !beforePan) throw new Error('Canvas missing')
-  await page.mouse.move(canvasBox.x + 15, canvasBox.y + canvasBox.height - 20)
+  await page.mouse.move(canvasBox.x + 15, canvasBox.y + 20)
   await page.mouse.down()
-  await page.mouse.move(canvasBox.x + 95, canvasBox.y + canvasBox.height + 25, { steps: 8 })
+  await page.mouse.move(canvasBox.x + 95, canvasBox.y - 25, { steps: 8 })
   await page.mouse.up()
   await expect
     .poll(async () =>
@@ -307,6 +335,29 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
     fullPage: true,
     animations: 'disabled',
   })
+  await page.getByRole('button', { name: '全屏编辑', exact: true }).click()
+  await page.getByRole('button', { name: '适应画布', exact: true }).click()
+  await page.screenshot({
+    path: testInfo.outputPath('workflow-fullscreen.png'),
+    animations: 'disabled',
+  })
+  await page.getByRole('button', { name: '收起节点配置', exact: true }).click()
+  await expect(panel).toHaveCount(0)
+  await page.getByRole('button', { name: '选择节点 是否通过', exact: true }).click()
+  await expect(page.getByLabel('条件值', { exact: true })).toHaveValue('true')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: '适应画布', exact: true }).click()
+  const mobilePanel = (await panel.boundingBox())!
+  expect(mobilePanel.x).toBeGreaterThanOrEqual(0)
+  expect(mobilePanel.x + mobilePanel.width).toBeLessThanOrEqual(390)
+  await page.screenshot({
+    path: testInfo.outputPath('workflow-editor-mobile.png'),
+    animations: 'disabled',
+  })
+  await page.setViewportSize({ width: 1600, height: 1100 })
+  await page.getByLabel('条件值', { exact: true }).press('Escape')
+  await expect(workspace).not.toHaveClass(/workflow-workspace--fullscreen/)
+  await expect(page.getByRole('button', { name: '全屏编辑', exact: true })).toBeFocused()
   await page.getByRole('button', { name: '创建并执行', exact: true }).click()
   await expect(page).toHaveURL(/execution=1/)
   await expect(page.getByRole('heading', { name: '订单查询协作' })).toBeVisible()

@@ -2,9 +2,12 @@
   <aside class="min-w-0 space-y-4 rounded-xl border bg-card p-4" aria-label="节点配置">
     <div class="flex items-center justify-between gap-2">
       <h2 class="font-semibold">节点配置</h2>
-      <AppButton v-if="node.kind !== 'START'" size="small" tone="danger" @click="emit('remove')"
-        >删除节点</AppButton
-      >
+      <div class="flex gap-2">
+        <AppButton v-if="node.kind !== 'START'" size="small" tone="danger" @click="emit('remove')"
+          >删除节点</AppButton
+        >
+        <AppButton size="small" aria-label="收起节点配置" @click="emit('close')">收起</AppButton>
+      </div>
     </div>
     <p class="break-all text-xs text-muted-foreground">节点 ID：{{ node.id }}</p>
     <FormField label="节点名称"
@@ -162,7 +165,7 @@ const props = defineProps<{
   experts: ProjectExpert[]
   projectId?: Id
 }>()
-const emit = defineEmits<{ change: [node: WorkflowNode]; remove: [] }>()
+const emit = defineEmits<{ change: [node: WorkflowNode]; remove: []; close: [] }>()
 const upstream = computed(() => upstreamExperts(props.workflow, props.node.id))
 const dataOpen = ref(false)
 const objectiveInput = ref<InstanceType<typeof AppInput> | null>(null)

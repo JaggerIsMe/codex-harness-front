@@ -4,6 +4,28 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--background);
+  &__stage {
+    position: relative;
+    container-type: inline-size;
+  }
+  &__inspector {
+    position: absolute;
+    z-index: 3;
+    top: 12px;
+    right: 12px;
+    width: 360px;
+    max-width: calc(100% - 24px);
+    max-height: calc(100% - 24px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px #0002;
+    @container (max-width: 767px) {
+      top: auto;
+      bottom: 12px;
+      max-height: 48%;
+    }
+  }
   &__toolbar {
     display: flex;
     align-items: center;
@@ -61,14 +83,18 @@
   &__disconnect {
     position: absolute;
     z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
     transform: translate(-50%, -50%);
-    padding: 6px 10px;
+    padding: 0;
     border: 1px solid var(--destructive);
-    border-radius: 6px;
+    border-radius: 50%;
     background: var(--card);
     color: var(--destructive);
-    font-size: 12px;
-    white-space: nowrap;
+    font-size: 20px;
+    line-height: 1;
     cursor: pointer;
     box-shadow: 0 2px 8px #0002;
     &:hover {
