@@ -9,6 +9,9 @@ export type StepStatus =
   | 'WAITING_THREAD'
   | 'DISPATCHING'
   | 'WAITING_APPROVAL'
+  | 'WAITING_USER'
+  | 'VALIDATING'
+  | 'VALIDATION_FAILED'
   | 'SKIPPED'
 export interface StepResult {
   schemaVersion: number
@@ -62,6 +65,9 @@ export const statusLabels: Record<StepStatus, string> = {
   WAITING_THREAD: '等待会话就绪',
   DISPATCHING: '派发中',
   WAITING_APPROVAL: '等待用户决定',
+  WAITING_USER: '等待补充信息',
+  VALIDATING: '校验节点产出',
+  VALIDATION_FAILED: '产出校验未通过',
   SKIPPED: '已跳过',
 }
 export const terminalStatuses: OrchestrationStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELLED']

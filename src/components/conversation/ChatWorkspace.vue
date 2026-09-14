@@ -2,7 +2,7 @@
   <WorkspaceWorkbenchLayout
     ref="workbenchLayout"
     :preview-open="!!previewFile"
-    :files-open="filesOpen && !!currentConversation"
+    :files-open="filesOpen && workspaceProjectId !== undefined"
   >
     <template #chat>
       <section ref="conversationSurface" class="conversation-workbench">
@@ -219,6 +219,13 @@
                 :class="buttonVariants({ variant: 'outline' })"
                 >多 Expert 编排</RouterLink
               >
+              <AppButton
+                v-if="workspaceProjectId !== undefined"
+                data-workspace-files-toggle
+                :aria-expanded="filesOpen"
+                @click="filesOpen = !filesOpen"
+                >工作区文件</AppButton
+              >
               <ProjectActions v-if="project" :key="project.id" :project="project" />
             </div>
             <RouterLink
@@ -252,9 +259,9 @@
     </template>
     <template #files>
       <WorkspaceFilePanel
-        v-if="filesOpen && currentConversation"
-        :key="String(currentConversation.projectId)"
-        :project-id="currentConversation.projectId"
+        v-if="filesOpen && workspaceProjectId !== undefined"
+        :key="String(workspaceProjectId)"
+        :project-id="workspaceProjectId"
         :preview-path="previewFile?.path"
         @preview="previewEntry"
         @close="filesOpen = false"
@@ -298,7 +305,7 @@ import type { WorkspaceFileEntry } from '@/types/workspace-file'
 const filesOpen = ref(false)
 const workbenchLayout = ref<InstanceType<typeof WorkspaceWorkbenchLayout> | null>(null)
 
-defineProps<{ project?: Project; projectName?: string }>()
+const props = defineProps<{ project?: Project; projectName?: string }>()
 const emit = defineEmits<{ create: [] }>()
 const conversationStore = useConversationStore()
 const navigation = useNavigationStore()
@@ -312,6 +319,10 @@ const {
   loading,
   resolvingId,
 } = storeToRefs(conversationStore)
+const workspaceProjectId = computed(
+  () =>
+    props.project?.id ?? conversationStore.currentProjectId ?? currentConversation.value?.projectId,
+)
 const {
   file: previewFile,
   metadata: previewMetadata,
@@ -326,7 +337,7 @@ const {
   download: downloadPreview,
   refresh: refreshPreview,
 } = useWorkspaceFilePreview(
-  computed(() => currentConversation.value?.projectId),
+  workspaceProjectId,
   computed(() => currentConversation.value?.id),
 )
 function previewEntry(file: WorkspaceFileEntry) {

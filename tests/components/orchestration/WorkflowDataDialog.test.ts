@@ -38,7 +38,7 @@ it('inserts only a user-selected variable and blocks invalid references', async 
     .trigger('click')
   expect(
     (wrapper.get('[aria-label="配置中的职责与目标"]').element as HTMLTextAreaElement).value,
-  ).toBe('用户原文\n{{inputs}}')
+  ).toBe('用户原文{{inputs}}')
   await wrapper
     .findAll('button')
     .find((b) => b.text() === '应用输入输出配置')!
@@ -51,5 +51,22 @@ it('inserts only a user-selected variable and blocks invalid references', async 
     .trigger('click')
   expect(wrapper.emitted('apply')).toHaveLength(1)
   expect(wrapper.get('[role="alert"]').text()).toContain('未配置')
+  wrapper.unmount()
+})
+
+it('inserts at the saved caret, replaces a selection and keeps the draft local', async () => {
+  const wrapper = mountDialog()
+  const input = wrapper.get<HTMLTextAreaElement>('[aria-label="配置中的职责与目标"]')
+  input.element.setSelectionRange(2, 2)
+  await input.trigger('focusin')
+  const insert = wrapper.findAll('button').find((button) => button.text() === '插入全部输入')!
+  await input.trigger('blur')
+  await insert.trigger('click')
+  expect(input.element.value).toBe('用户{{inputs}}原文')
+  input.element.setSelectionRange(0, 2)
+  await insert.trigger('click')
+  expect(input.element.value).toBe('{{inputs}}{{inputs}}原文')
+  expect(wrapper.props('node').objective).toBe('用户原文')
+  expect(wrapper.emitted('apply')).toBeUndefined()
   wrapper.unmount()
 })

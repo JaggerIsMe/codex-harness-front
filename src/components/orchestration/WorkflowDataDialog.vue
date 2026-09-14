@@ -44,6 +44,7 @@
       </div>
       <FormField label="职责与目标（变量展开前）"
         ><AppInput
+          ref="objectiveInput"
           v-model="draft.objective"
           label="配置中的职责与目标"
           type="textarea"
@@ -77,6 +78,7 @@ import WorkflowOutputSchemaEditor from './WorkflowOutputSchemaEditor.vue'
 import WorkflowFileReferences from './WorkflowFileReferences.vue'
 const props = defineProps<{ node: WorkflowNode; upstream: WorkflowNode[]; projectId: Id }>()
 const emit = defineEmits<{ apply: [WorkflowNode]; close: [] }>()
+const objectiveInput = ref<InstanceType<typeof AppInput> | null>(null)
 const draft = ref<WorkflowNode>(JSON.parse(JSON.stringify(props.node))),
   tab = ref('inputs'),
   errors = ref<string[]>([]),
@@ -88,8 +90,9 @@ const tabs = [
   { key: 'files', label: '输入输出文件' },
 ]
 function insert(variable: string) {
-  draft.value.objective += `\n${variable}`
-  notice.value = `已将 ${variable} 插入职责末尾，请调整位置和说明文字。`
+  notice.value = objectiveInput.value?.insertAtCursor(variable)
+    ? `已在职责编辑位置插入 ${variable}。`
+    : '职责最多为 12000 字符，请缩短内容后再插入。'
 }
 function apply() {
   errors.value = validateNodeData(draft.value, props.upstream)

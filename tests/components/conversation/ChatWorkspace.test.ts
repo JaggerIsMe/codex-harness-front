@@ -65,13 +65,34 @@ function mountWorkspace() {
       plugins: [pinia],
       renderStubDefaultSlot: true,
       stubs: {
-        WorkspaceWorkbenchLayout: { template: '<div><slot name="chat" /></div>' },
+        WorkspaceWorkbenchLayout: {
+          template: '<div><slot name="chat" /><slot name="files" /></div>',
+        },
         RouterLink: { template: '<a><slot /></a>' },
       },
     },
   })
   return wrapper
 }
+
+it('opens project files without a selected Conversation and follows the current Project', async () => {
+  const store = useConversationStore()
+  store.currentProjectId = 3
+  const view = mountWorkspace()
+  expect(view.find('workspace-file-panel-stub').exists()).toBe(false)
+  await view.get('[data-workspace-files-toggle]').trigger('click')
+  expect(view.getComponent({ name: 'WorkspaceFilePanel' }).props('projectId')).toBe(3)
+  store.currentConversation = { ...conversation }
+  await nextTick()
+  expect(view.getComponent({ name: 'WorkspaceFilePanel' }).props('projectId')).toBe(3)
+  store.currentConversation = null
+  store.currentProjectId = 5
+  await nextTick()
+  expect(view.getComponent({ name: 'WorkspaceFilePanel' }).props('projectId')).toBe(5)
+  expect(view.get('[data-workspace-files-toggle]').attributes('aria-expanded')).toBe('true')
+  await view.get('[data-workspace-files-toggle]').trigger('click')
+  expect(view.find('workspace-file-panel-stub').exists()).toBe(false)
+})
 
 it('announces Conversation initialization beside its title and clears it when the Thread is ready', async () => {
   const store = useConversationStore()

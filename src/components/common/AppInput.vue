@@ -1,5 +1,5 @@
 <template>
-  <div class="relative w-full">
+  <div ref="container" class="relative w-full" @focusin="rememberTextFocus">
     <Textarea v-if="type === 'textarea'" v-model="model" v-bind="$attrs" :aria-label="label" />
     <Input
       v-else
@@ -21,7 +21,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { useAttrs } from 'vue'
+import { nextTick, ref, useAttrs } from 'vue'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 defineOptions({ inheritAttrs: false })
@@ -31,6 +31,34 @@ const props = withDefaults(defineProps<{ type?: string; clearable?: boolean; lab
 const model = defineModel<string>({ default: '' })
 const emit = defineEmits<{ clear: [] }>()
 const attrs = useAttrs()
+const container = ref<HTMLElement | null>(null)
+let hasTextFocus = false
+function rememberTextFocus(event: FocusEvent) {
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
+    hasTextFocus = true
+}
+function insertAtCursor(text: string): boolean {
+  const field = container.value?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    'input,textarea',
+  )
+  if (!field || field.disabled || field.readOnly || field.selectionStart === null) return false
+  const start = hasTextFocus ? field.selectionStart : model.value.length
+  const end = hasTextFocus ? (field.selectionEnd ?? start) : start
+  const updated = model.value.slice(0, start) + text + model.value.slice(end)
+  if (field.maxLength >= 0 && updated.length > field.maxLength) return false
+  const scrollTop = field.scrollTop
+  const scrollLeft = field.scrollLeft
+  model.value = updated
+  void nextTick(() => {
+    if (!field.isConnected) return
+    field.focus({ preventScroll: true })
+    field.setSelectionRange(start + text.length, start + text.length)
+    field.scrollTop = scrollTop
+    field.scrollLeft = scrollLeft
+  })
+  return true
+}
+defineExpose({ insertAtCursor })
 const label = props.label || String(attrs.placeholder || '') || undefined
 function clear() {
   model.value = ''

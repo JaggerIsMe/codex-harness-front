@@ -4,7 +4,7 @@
       <div>
         <h2 class="text-lg font-semibold">{{ execution.title }}</h2>
         <p class="text-sm text-muted-foreground">
-          {{ statusLabels[execution.status] }} · #{{ execution.id }}
+          {{ executionStatusLabel }} · #{{ execution.id }}
         </p>
       </div>
       <AppButton v-if="canCancel" :loading="canceling" @click="cancel">停止编排</AppButton>
@@ -48,11 +48,33 @@
             ></strong
           >
           <AppButton v-if="step.conversationId" link @click="selectedStepId = step.id">
-            {{ step.status === 'WAITING_APPROVAL' ? '处理审批 / 回答问题' : '查看步骤会话' }}
+            {{
+              step.status === 'WAITING_APPROVAL'
+                ? '处理审批 / 回答问题'
+                : execution.status === 'RUNNING' && step.status === 'WAITING_USER'
+                  ? '回答节点问题'
+                  : execution.status === 'RUNNING' && step.status === 'VALIDATION_FAILED'
+                    ? '查看并修正产出'
+                    : '查看步骤会话'
+            }}
           </AppButton>
         </div>
         <p class="text-sm text-muted-foreground">{{ step.objective }}</p>
         <p v-if="step.failureMessage" class="text-sm text-destructive">{{ step.failureMessage }}</p>
+        <OrchestrationStepRecheck
+          v-if="
+            step.turnId &&
+            auth.can('turn:start') &&
+            ['RUNNING', 'NEEDS_ATTENTION'].includes(execution.status) &&
+            ['WAITING_USER', 'VALIDATION_FAILED', 'NEEDS_ATTENTION'].includes(step.status)
+          "
+          :key="String(step.turnId)"
+          :project-id="execution.projectId"
+          :execution-id="execution.id"
+          :step-id="step.id"
+          :turn-id="step.turnId"
+          @checked="emit('changed')"
+        />
         <details v-if="step.result">
           <summary class="cursor-pointer text-sm">
             {{
@@ -80,7 +102,13 @@
             >{{ JSON.stringify(step.result.output, null, 2) }}</pre>
         </details>
         <div v-if="step.result?.files?.length" class="space-y-1 text-sm">
-          <p class="text-muted-foreground">声明的输出文件（尚未核实存在性和内容）</p>
+          <p class="text-muted-foreground">
+            {{
+              step.result.schemaVersion >= 3
+                ? '已核实本次产出的输出文件（内容哈希与节点开始前不同）'
+                : '历史声明的输出文件（尚未核实存在性和内容）'
+            }}
+          </p>
           <p v-for="file in step.result.files" :key="file.name" class="break-all">
             {{ file.name }}：{{ file.path }}
           </p>
@@ -88,7 +116,7 @@
       </li>
     </ol>
     <p class="text-xs text-muted-foreground">
-      “已完成”表示所选路径执行结束；交付和验证结论请以节点结果中的证据、限制及待办为准。
+      节点明确完成且产出校验通过后才进入下一步。文件检查验证存在性与内容变化，业务准确性请结合交接结果核对。
     </p>
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
     <OrchestrationStepConversationDialog
@@ -97,6 +125,9 @@
       :project-id="execution.projectId"
       :conversation-id="selectedStep.conversationId"
       :step="selectedStep"
+      :execution-id="execution.id"
+      :can-continue="execution.status === 'RUNNING'"
+      @continued="emit('changed')"
       @close="selectedStepId = null"
     />
   </section>
@@ -113,6 +144,7 @@ import AppButton from '@/components/common/AppButton.vue'
 import { buttonVariants } from '@/components/ui/button'
 import WorkflowCanvas from './WorkflowCanvas.vue'
 import OrchestrationStepConversationDialog from './OrchestrationStepConversationDialog.vue'
+import OrchestrationStepRecheck from './OrchestrationStepRecheck.vue'
 import type { Id } from '@/types/domain'
 import { withStartNode } from '@/utils/workflow'
 const props = defineProps<{ execution: Orchestration }>()
@@ -120,6 +152,14 @@ const emit = defineEmits<{ changed: [] }>()
 const canceling = ref(false),
   error = ref('')
 const auth = useAuthStore()
+const executionStatusLabel = computed(() => {
+  const waiting =
+    props.execution.status === 'RUNNING' &&
+    props.execution.steps.find((step) =>
+      ['WAITING_USER', 'VALIDATION_FAILED', 'WAITING_APPROVAL', 'VALIDATING'].includes(step.status),
+    )
+  return statusLabels[waiting ? waiting.status : props.execution.status]
+})
 const displayWorkflow = computed(() =>
   props.execution.workflow ? withStartNode(props.execution.workflow) : null,
 )

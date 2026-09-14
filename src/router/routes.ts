@@ -115,6 +115,12 @@ const routes = [
         component: () => import('../views/conversation/ConversationList.vue'),
         meta: { title: '项目会话', permission: 'workspace:use' },
       },
+      {
+        path: 'usage',
+        name: 'usage',
+        component: () => import('../views/usage/UsageManagement.vue'),
+        meta: { title: '用量与额度' },
+      },
       { path: 'conversations', redirect: '/projects' },
     ],
   },

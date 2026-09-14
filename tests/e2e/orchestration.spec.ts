@@ -9,6 +9,8 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
   let socket: WebSocketRoute | undefined
   let execution: Orchestration | null = null
   let approvalResolved = false
+  const continuations: { expectedTurnId: number; message: string; requestKey: string }[] = []
+  const rechecks: { expectedTurnId: number }[] = []
   const creates: CreateOrchestration[] = [],
     errors: string[] = [],
     searches: string[] = []
@@ -127,6 +129,16 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
         })),
       }
       data = execution
+    } else if (path === '/projects/2/orchestrations/1/steps/2/continue' && execution) {
+      continuations.push(route.request().postDataJSON())
+      execution.steps[1]!.status = 'RUNNING'
+      execution.steps[1]!.turnId = 8
+      data = execution
+    } else if (path === '/projects/2/orchestrations/1/steps/2/recheck' && execution) {
+      rechecks.push(route.request().postDataJSON())
+      execution.status = 'RUNNING'
+      execution.steps[1]!.status = 'SUCCEEDED'
+      data = execution
     } else if (path === '/projects/2/orchestrations') {
       searches.push(url.searchParams.get('keyword') || '')
       data = execution ? [{ ...execution, steps: [] }] : []
@@ -152,7 +164,19 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
     await page.getByLabel('执行 Expert', { exact: true }).selectOption(expert)
     await page.getByLabel('职责与目标', { exact: true }).fill(message)
   }
-  await addExpert('检查输入', '检查 {{goal}}。返回 JSON。')
+  await addExpert('检查输入', '检查 。返回 JSON。')
+  const objective = page.getByLabel('职责与目标', { exact: true })
+  await objective.press('Control+Home')
+  await objective.press('ArrowRight')
+  await objective.press('ArrowRight')
+  await objective.press('ArrowRight')
+  await page.getByRole('button', { name: '插入工作流目标', exact: true }).click()
+  await expect(objective).toHaveValue('检查 {{goal}}。返回 JSON。')
+  await expect(objective).toBeFocused()
+  // Continued typing stays immediately after the inserted field.
+  await objective.press('x')
+  await expect(objective).toHaveValue('检查 {{goal}}x。返回 JSON。')
+  await objective.press('Backspace')
   await page.getByRole('button', { name: '添加条件节点', exact: true }).click()
   await page.getByLabel('节点名称', { exact: true }).fill('是否通过')
   await addExpert('发布结果', '发布已经确认的结果。')
@@ -326,6 +350,29 @@ test('edit canvas branches, preserve draft, create custom graph and recover exec
   await expect(viewer).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('button', { name: '处理审批 / 回答问题' })).toBeVisible()
+  ;(execution as Orchestration).steps[1]!.status = 'WAITING_USER'
+  await page.reload()
+  await expect(page.getByText('等待补充信息 · #1', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '回答节点问题' }).click()
+  await viewer.getByLabel('你的回答', { exact: true }).fill('只查询美国 Vantrue 主店')
+  await expect(viewer.getByPlaceholder('请输入你的回答或补充说明')).toBeVisible()
+  await viewer.getByRole('button', { name: '发送并继续当前节点', exact: true }).click()
+  await expect(viewer.getByLabel('节点补充信息')).toHaveCount(0)
+  expect(continuations).toHaveLength(1)
+  expect(continuations[0]).toMatchObject({ expectedTurnId: 7, message: '只查询美国 Vantrue 主店' })
+  expect((execution as Orchestration).steps[2]!.status).toBe('PENDING')
+  await expect(page).toHaveURL(/\/projects\/2\/orchestrations\?execution=1/)
+  await viewer.getByRole('button', { name: '关闭会话' }).click()
+  ;(execution as Orchestration).status = 'NEEDS_ATTENTION'
+  ;(execution as Orchestration).steps[1]!.status = 'NEEDS_ATTENTION'
+  await page.reload()
+  await page.getByRole('button', { name: '查看步骤会话', exact: true }).click()
+  await expect(viewer.locator('textarea')).toHaveCount(0)
+  await viewer.getByRole('button', { name: '关闭会话' }).click()
+  await page.getByRole('button', { name: '重新校验并推进', exact: true }).click()
+  await expect(page.getByRole('button', { name: '重新校验并推进', exact: true })).toHaveCount(0)
+  expect(rechecks).toEqual([{ expectedTurnId: 8 }])
+  expect(continuations).toHaveLength(1)
   await page.getByPlaceholder('搜索编排名称').fill('订单')
   await page.getByPlaceholder('搜索编排名称').press('Enter')
   await expect.poll(() => searches.includes('订单')).toBe(true)

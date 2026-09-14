@@ -2,7 +2,7 @@ import { sessionCredentials } from '../support/auth'
 import { expect, test, type Page } from '@playwright/test'
 import type { WorkspaceFileEntry, WorkspaceFileOperation } from '../../src/types/workspace-file'
 
-async function fixture(page: Page) {
+async function fixture(page: Page, conversationSelected = true) {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
@@ -267,7 +267,7 @@ async function fixture(page: Page) {
     operations[id] = operation
     return route.fulfill({ json: response(operation) })
   })
-  await page.goto('/projects/3?id=4')
+  await page.goto(conversationSelected ? '/projects/3?id=4' : '/projects/3')
   await page.getByRole('button', { name: '工作区文件', exact: true }).click()
   const panel = page.getByRole('complementary', { name: '工作区文件' })
   await expect(panel.getByRole('button', { name: '预览 a.txt' })).toBeVisible()
@@ -281,6 +281,18 @@ async function fixture(page: Page) {
     archiveRunning: (value: boolean) => (archiveRunning = value),
   }
 }
+
+test('browses and previews project files on the new Conversation page', async ({ page }) => {
+  await page.setViewportSize({ width: 1900, height: 1000 })
+  const state = await fixture(page, false)
+  await expect(page.getByRole('heading', { name: '今天想做些什么？' })).toBeVisible()
+  await state.panel.getByRole('button', { name: '预览 a.txt' }).click()
+  await expect(page.getByRole('complementary', { name: '文件预览', exact: true })).toContainText(
+    'hello',
+  )
+  await expect(page).toHaveURL(/\/projects\/3$/)
+  expect(state.errors).toEqual([])
+})
 
 test('renames with keyboard, closes the old preview and moves files without changing upload destination', async ({
   page,

@@ -53,6 +53,8 @@
       </FormField>
       <FormField label="职责与目标（实际发送内容）"
         ><AppInput
+          :key="node.id"
+          ref="objectiveInput"
           :model-value="node.objective"
           type="textarea"
           label="职责与目标"
@@ -74,6 +76,9 @@
           >插入 {{ source.name }} 结果</AppButton
         >
       </div>
+      <p v-if="insertionError" role="alert" class="text-sm text-destructive">
+        {{ insertionError }}
+      </p>
     </template>
     <template v-else-if="node.condition">
       <FormField label="判断来源">
@@ -142,7 +147,7 @@
   </aside>
 </template>
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Id } from '@/types/domain'
 import WorkflowDataDialog from './WorkflowDataDialog.vue'
 import type { Workflow, WorkflowNode, WorkflowCondition } from '@/types/orchestration'
@@ -160,6 +165,14 @@ const props = defineProps<{
 const emit = defineEmits<{ change: [node: WorkflowNode]; remove: [] }>()
 const upstream = computed(() => upstreamExperts(props.workflow, props.node.id))
 const dataOpen = ref(false)
+const objectiveInput = ref<InstanceType<typeof AppInput> | null>(null)
+const insertionError = ref('')
+watch(
+  () => props.node.id,
+  () => {
+    insertionError.value = ''
+  },
+)
 function applyData(node: WorkflowNode) {
   emit('change', node)
   dataOpen.value = false
@@ -179,6 +192,8 @@ function setOperator(event: Event) {
     condition({ operator })
 }
 function insert(text: string) {
-  patch({ objective: props.node.objective + text })
+  insertionError.value = objectiveInput.value?.insertAtCursor(text)
+    ? ''
+    : '职责最多为 12000 字符，请缩短内容后再插入。'
 }
 </script>

@@ -158,6 +158,7 @@ const menuItems = computed(() =>
     { path: '/workspaces', label: '执行目录', icon: Files, permission: 'device:manage' },
     { path: '/skills', label: 'Skills', icon: Sparkles, permission: 'skill:manage' },
     { path: '/models', label: '模型管理', icon: BrainCircuit, permission: 'model:manage' },
+    { path: '/usage', label: '用量与额度', icon: LayoutDashboard, permission: '' },
     { path: '/mcp-configurations', label: 'MCP管理', icon: Plug, permission: 'mcp:manage' },
     { path: '/experts', label: '专家管理', icon: Users, permission: 'expert:manage' },
     { path: '/expert-market', label: '专家市场', icon: Sparkles, permission: 'expert:read' },

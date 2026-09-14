@@ -3,6 +3,16 @@ import type { Id } from '@/types/domain'
 import type { CreateOrchestration, Orchestration } from '@/types/orchestration'
 
 const root = (projectId: Id) => `/projects/${projectId}/orchestrations`
+export const recheckOrchestrationStep = (projectId: Id, id: Id, stepId: Id, expectedTurnId: Id) =>
+  request<Orchestration>('post', `${root(projectId)}/${id}/steps/${stepId}/recheck`, {
+    expectedTurnId,
+  })
+export const continueOrchestrationStep = (
+  projectId: Id,
+  id: Id,
+  stepId: Id,
+  input: { expectedTurnId: Id; requestKey: string; message: string },
+) => request<Orchestration>('post', `${root(projectId)}/${id}/steps/${stepId}/continue`, input)
 export const orchestrationAvailable = (projectId: Id, signal?: AbortSignal) =>
   request<boolean>('get', `${root(projectId)}/availability`, undefined, { signal })
 export const listOrchestrations = (projectId: Id, keyword: string, signal?: AbortSignal) =>
