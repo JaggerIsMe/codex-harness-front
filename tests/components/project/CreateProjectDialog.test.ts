@@ -27,6 +27,13 @@ it('allows verified Linux and native Windows devices and disables the old write-
         provisioningAvailable: true,
       },
       {
+        id: 4,
+        deviceName: 'Windows Public API',
+        status: 'ONLINE',
+        isolationMode: 'WINDOWS_LPAC_API_V3',
+        provisioningAvailable: true,
+      },
+      {
         id: 2,
         deviceName: 'Windows',
         status: 'ONLINE',
@@ -50,6 +57,7 @@ it('allows verified Linux and native Windows devices and disables the old write-
   await flushPromises()
   expect(wrapper.get('option[value="1"]').attributes('disabled')).toBeUndefined()
   expect(wrapper.get('option[value="3"]').attributes('disabled')).toBeUndefined()
+  expect(wrapper.get('option[value="4"]').attributes('disabled')).toBeUndefined()
   expect(wrapper.get('option[value="2"]').attributes('disabled')).toBeDefined()
   expect(wrapper.get('option[value="2"]').text()).toContain('尚未启用读取隔离')
   wrapper.unmount()

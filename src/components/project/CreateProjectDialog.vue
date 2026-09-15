@@ -73,7 +73,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const hasReadIsolation = (d: ExecutableDevice) =>
-  ['LINUX_PROJECT_SKILL_V2', 'WINDOWS_LPAC_SKILL_V2'].includes(d.isolationMode)
+  ['LINUX_PROJECT_SKILL_V2', 'WINDOWS_LPAC_SKILL_V2', 'WINDOWS_LPAC_API_V3'].includes(d.isolationMode)
 const ready = (d: ExecutableDevice) =>
   d.status === 'ONLINE' && hasReadIsolation(d) && d.provisioningAvailable
 watch(
