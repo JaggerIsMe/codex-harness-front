@@ -13,21 +13,6 @@ import {
   workspaceParent,
 } from '@/utils/workspaceFileActions'
 
-const hiddenNames = new Set([
-  '.codex',
-  '.git',
-  '.harness',
-  '.agent',
-  '.agents',
-  '.harness-workspace.json',
-])
-function visiblePath(path: string): boolean {
-  return path.split('/').every((part) => {
-    const name = part.toLowerCase()
-    return !hiddenNames.has(name) && !name.startsWith('.harness-upload-')
-  })
-}
-
 export const useWorkspaceFileStore = defineStore('workspace-file', () => {
   const projects = ref<Record<string, Record<string, WorkspaceDirectoryState>>>({})
   const expanded = ref<Record<string, string[]>>({})
@@ -151,8 +136,6 @@ export const useWorkspaceFileStore = defineStore('workspace-file', () => {
   ) {
     if (requestEpoch !== epoch(pid)) return
     const previous = directory(pid, value.path)
-    previous.entries = previous.entries.filter((entry) => visiblePath(entry.path))
-    expanded.value[String(pid)] = (expanded.value[String(pid)] || []).filter(visiblePath)
     if (cursor && previous.generation !== baseGeneration) return
     if (!cursor && BigInt(value.generation) < BigInt(previous.generation)) return
     const keepPages =
@@ -170,7 +153,7 @@ export const useWorkspaceFileStore = defineStore('workspace-file', () => {
         ? previous.entries
         : value.entries
     Object.assign(previous, value, {
-      entries: entries.filter((entry) => visiblePath(entry.path)),
+      entries,
       nextCursor: keepPages ? previous.nextCursor : (value.nextCursor ?? null),
       operation: value.operation ?? null,
       generation: cursor ? previous.generation : value.generation,
@@ -178,7 +161,6 @@ export const useWorkspaceFileStore = defineStore('workspace-file', () => {
     })
   }
   function toggle(pid: Id, path: string) {
-    if (!visiblePath(path)) return
     const paths = (expanded.value[String(pid)] ||= [])
     expanded.value[String(pid)] = paths.includes(path)
       ? paths.filter((item) => item !== path)

@@ -20,9 +20,7 @@ export function validWorkspaceName(name: string): boolean {
     !/[. ]$/.test(name) &&
     name !== '.' &&
     name !== '..' &&
-    !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) &&
-    !/^\.(codex|git|harness|agent|agents|harness-workspace\.json)$/i.test(name) &&
-    !/^\.harness-upload-/i.test(name)
+    !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)
   )
 }
 export function operationChange(operation: WorkspaceFileOperation): WorkspaceFileChange | null {

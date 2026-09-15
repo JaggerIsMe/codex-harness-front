@@ -84,7 +84,7 @@ async function submit() {
   const file = props.file
   if (!file || submitting.value || blocked.value || name.value === file.name) return
   if (!validWorkspaceName(name.value)) {
-    error.value = '请输入有效的单个名称，不能包含路径或受保护名称'
+    error.value = '请输入有效的单个名称，不能包含路径、非法字符或系统保留设备名'
     return
   }
   if (request?.name !== name.value) request = { name: name.value, id: crypto.randomUUID() }

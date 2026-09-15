@@ -2,7 +2,7 @@ import { sessionCredentials } from '../support/auth'
 import { expect, test, type Page } from '@playwright/test'
 import type { WorkspaceFileEntry, WorkspaceFileOperation } from '../../src/types/workspace-file'
 
-async function fixture(page: Page, conversationSelected = true) {
+async function fixture(page: Page, conversationSelected = true, dotfiles = false) {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const response = (data: unknown) => ({ status: 'success', code: 200, info: '', data })
@@ -97,6 +97,10 @@ async function fixture(page: Page, conversationSelected = true) {
     '': [entry('a.txt'), entry('docs', 'DIRECTORY'), entry('archive', 'DIRECTORY')],
     docs: [entry('docs/a.txt'), entry('docs/b.txt')],
     archive: [],
+  }
+  if (dotfiles) {
+    directories['']!.push(entry('.git', 'DIRECTORY'))
+    directories['.git'] = [entry('.git/config')]
   }
   const operations: Record<string, WorkspaceFileOperation> = {}
   const requests: { endpoint: string; data: Record<string, unknown> }[] = []
@@ -197,7 +201,13 @@ async function fixture(page: Page, conversationSelected = true) {
       status: 'SUCCEEDED',
       error: null,
     }
-    if (endpoint === '/renames' || endpoint === '/moves') {
+    if (endpoint === '/directories') {
+      const path = String(data.path)
+      operation.kind = 'CREATE_WORKSPACE_DIRECTORY'
+      directories[parent(path)]!.push(entry(path, 'DIRECTORY'))
+      directories[path] = []
+      generation++
+    } else if (endpoint === '/renames' || endpoint === '/moves') {
       const path = String(data.path)
       const file = directories[parent(path)]!.find((file) => file.path === path)!
       const destination = endpoint === '/renames' ? parent(path) : String(data.targetDirectory)
@@ -281,6 +291,25 @@ async function fixture(page: Page, conversationSelected = true) {
     archiveRunning: (value: boolean) => (archiveRunning = value),
   }
 }
+
+test('shows dotfile directories and creates formerly reserved names', async ({ page }) => {
+  const state = await fixture(page, true, true)
+  await expect(state.panel.getByRole('button', { name: '.git', exact: true })).toBeVisible()
+  await state.panel.getByRole('button', { name: '新建文件夹', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新建文件夹', exact: true })
+  await dialog.getByLabel('文件夹名称').fill('.agents')
+  await dialog.getByRole('button', { name: '创建', exact: true }).last().click()
+  await expect(dialog).toHaveCount(0)
+  expect(state.requests.find((request) => request.endpoint === '/directories')?.data.path).toBe(
+    '.agents',
+  )
+  await expect(state.panel.getByRole('button', { name: '.agents', exact: true })).toBeVisible()
+  await state.panel.getByRole('button', { name: '.git', exact: true }).click()
+  await expect(
+    state.panel.getByRole('button', { name: '预览 config', exact: true }),
+  ).toBeVisible()
+  expect(state.errors).toEqual([])
+})
 
 test('browses and previews project files on the new Conversation page', async ({ page }) => {
   await page.setViewportSize({ width: 1900, height: 1000 })

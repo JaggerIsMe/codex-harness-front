@@ -36,15 +36,15 @@ it('rejects pagination from a previous directory generation', () => {
     'next.txt',
   ])
 })
-it('filters internal entries from responses and retained pages at every depth', () => {
+it('preserves dotfiles in responses, retained pages and expanded directories', () => {
   const store = useWorkspaceFileStore()
   const cached = store.directory(1, '')
   Object.assign(cached, directory('20', '.git'))
   cached.entries.push(directory('20', 'report.txt').entries[0]!)
   store.expanded['1'] = ['docs/.AGENT/nested', 'docs']
   store.apply(1, { ...directory('20', 'unused'), entries: [] }, '', '20')
-  expect(cached.entries.map((entry) => entry.name)).toEqual(['report.txt'])
-  expect(store.expanded['1']).toEqual(['docs'])
+  expect(cached.entries.map((entry) => entry.name)).toEqual(['.git', 'report.txt'])
+  expect(store.expanded['1']).toEqual(['docs/.AGENT/nested', 'docs'])
   for (const name of [
     '.CODEX',
     '.git',
@@ -57,9 +57,20 @@ it('filters internal entries from responses and retained pages at every depth', 
     store.apply(1, directory('21', `docs/${name}`), 'report.txt', '20')
   }
   store.apply(1, directory('22', '.gitignore'), 'report.txt', '20')
-  expect(cached.entries.map((entry) => entry.name)).toEqual(['report.txt', '.gitignore'])
+  expect(cached.entries.map((entry) => entry.name)).toEqual([
+    '.git',
+    'report.txt',
+    'docs/.CODEX',
+    'docs/.git',
+    'docs/.harness',
+    'docs/.agent',
+    'docs/.agents',
+    'docs/.harness-workspace.json',
+    'docs/.harness-upload-temp',
+    '.gitignore',
+  ])
   store.toggle(1, '.codex')
-  expect(store.expanded['1']).toEqual(['docs'])
+  expect(store.expanded['1']).toEqual(['docs/.AGENT/nested', 'docs', '.codex'])
 })
 it('discards even a newer generation if its request began before a structural change', () => {
   const store = useWorkspaceFileStore()

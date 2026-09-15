@@ -27,6 +27,7 @@ import { ref, watch } from 'vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import { validWorkspaceName } from '@/utils/workspaceFileActions'
 const props = defineProps<{
   modelValue: boolean
   parent: string
@@ -53,7 +54,7 @@ function close() {
 async function submit() {
   if (submitting.value) return
   const value = name.value.trim()
-  if (!value || /[/\\<>:"|?*]/.test(value) || value === '.' || value === '..') {
+  if (!validWorkspaceName(value)) {
     error.value = '请输入有效的单个文件夹名称'
     return
   }
