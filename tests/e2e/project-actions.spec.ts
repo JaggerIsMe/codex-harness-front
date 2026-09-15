@@ -16,7 +16,7 @@ async function fixture(page: Page, permissions: string[]) {
     rootPath: 'D:/workspace',
     workspaceStatus: 'ENABLED',
     conversationCount: 1,
-    isolationMode: 'LINUX_PROJECT_PROFILE_V1',
+    isolationMode: 'LINUX_PROJECT_SKILL_V2',
     createdAt: '',
   }
   const conversation = {

@@ -27,7 +27,7 @@ const machines = [1, 2].map((id) => ({
   id,
   deviceName: `机器 ${id}`,
   status: 'ONLINE',
-  isolationMode: 'LINUX_PROJECT_PROFILE_V1',
+  isolationMode: 'LINUX_PROJECT_SKILL_V2',
   provisioningAvailable: true,
 }))
 async function setup(page: Page, profile = member) {

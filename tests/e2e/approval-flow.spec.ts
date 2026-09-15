@@ -55,7 +55,7 @@ for (const [label, decision] of [
       workspaceName: '测试工作区',
       workspaceStatus: 'ENABLED',
       rootPath: 'D:/workspace/approval-test',
-      isolationMode: 'LINUX_PROJECT_PROFILE_V1',
+      isolationMode: 'LINUX_PROJECT_SKILL_V2',
       conversationCount: 1,
     }
     const conversation = {

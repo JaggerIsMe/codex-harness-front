@@ -49,7 +49,7 @@ const preparing: Project = {
   projectName: '新建 Project',
   status: 'ACTIVE',
   provisioningStatus: 'PREPARING',
-  isolationMode: 'LINUX_PROJECT_PROFILE_V1',
+  isolationMode: 'LINUX_PROJECT_SKILL_V2',
   deviceId: 1,
   deviceCode: 'device-1',
   deviceName: '机器 1',

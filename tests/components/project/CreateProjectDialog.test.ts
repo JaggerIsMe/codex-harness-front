@@ -16,14 +16,14 @@ it('allows verified Linux and native Windows devices and disables the old write-
         id: 1,
         deviceName: 'Linux',
         status: 'ONLINE',
-        isolationMode: 'LINUX_PROJECT_PROFILE_V1',
+        isolationMode: 'LINUX_PROJECT_SKILL_V2',
         provisioningAvailable: true,
       },
       {
         id: 3,
         deviceName: 'Windows LPAC',
         status: 'ONLINE',
-        isolationMode: 'WINDOWS_LPAC_V1',
+        isolationMode: 'WINDOWS_LPAC_SKILL_V2',
         provisioningAvailable: true,
       },
       {
